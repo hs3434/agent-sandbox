@@ -1,6 +1,7 @@
 # Design Spec v3 — Sandbox 平台参考架构
 
-> 状态：draft — 2026-08-14
+> 状态：v3.3 — 2026-11-20，**P0 施工基线**（架构冻结，细节随实现补充）
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留，代码随需实现
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. 一切皆资源，治理统一，操作分化（capability 声明）
@@ -42,7 +43,7 @@ resource_id = "{tenant}:{type}:{name}"
 
 | type | capabilities | 生命周期 | CRUD 对称性 | 恢复机制 |
 |---|---|---|---|---|
-| exec_env | shell/files/exec（capability = 平台原语，非软件清单，见 §10） | 运行面状态机 | C/R/D + 重建式 U | 快照/回滚（重建成本高）；workdir 独立恢复轴（见 §7） |
+| exec_env | shell/files/snapshot（capability = 平台原语，非软件清单，见 §10） | 运行面状态机 | C/R/D + 重建式 U | 快照/回滚（重建成本高）；workdir 独立恢复轴（见 §7） |
 | policy | rule 读改写 | 配置版本化 | 完整 CRUD | 版本化回滚（成本低） |
 | credential | inject/recycle | 注入↔回收 | C/D、无 R、重建式 U | 重新注入（秘密不可快照） |
 | snapshot | 只读元数据 | 创建→保留→轮转 | C/R/D | —（本身即恢复手段） |
@@ -51,9 +52,12 @@ resource_id = "{tenant}:{type}:{name}"
 
 ```yaml
 resource_id, type, capabilities, backend, status,
-tags: {tenant, project, purpose}, limits: {cpu, memory, pids},
+tags: {tenant, project, purpose},
 created_at, owner(session/任务)
 ```
+
+limits（cpu/memory/pids）属于 exec_env 的创建规格（ExecEnvSpec，不可变），
+不在共享元数据层——policy/quota 类资源没有 limits 语义。
 
 ## 3. 生命周期状态机
 
@@ -66,6 +70,9 @@ created → starting → running → stopping → stopped → removing → remov
 - 迁移幂等（重复调用同状态）
 - 超时驱动：starting 30s / stopping 60s
 - 无 update：改镜像/限额 = 重建（不可变基础设施）
+- **并发仲裁（P0 必需）**：每个 exec_env 持有编排层互斥锁——同一时刻只允许一个生命周期
+  迁移或 revert 在途；第二个操作立即拒绝（409 conflict，非排队）。revert 内部五步视为
+  一个临界区（锁覆盖 ①→⑤）。锁随 removed 释放；error 状态持有锁直到显式 reset/重建
 
 ### 3.2 配置（版本化）
 ```
@@ -130,7 +137,7 @@ exec_env
 **恢复边界 = 本地态**（哲学条款）：两轴快照只恢复本地状态（容器层/文件系统/工作目录）。
 对外部世界的副作用——服务端状态（会话/账号/风控）、支付、git push——结构性不可恢复，
 其可观测性与管控由审计（network_decision / audit_query）与网络策略承担。
-docker 沙箱同理（外部交互占比小而已），浏览器尤甚（主要交互即远端状态，见 §10）。
+docker 沙箱同理（外部交互占比小而已）。
 
 ### 7.1 模型
 {id, resource_id, name, created_at, type: baseline|manual|auto, scope: env|workdir|full, size_bytes, backend_specific, status, excluded: [credential_ids, workdir]}
@@ -224,13 +231,13 @@ class Backend(ABC):
 
 审计事件流 + metrics（docker stats 时间序列）+ WebSocket 遥测推送（状态变更通知）
 
-计量预留：核心只负责发计量事件（`audit.Event.Metering` 载荷 + `audit.Bus` 扇出），
-计费/账户是事件流的下游消费者，不属于开源核心（见 §14）。计量单位与定价属商业策略，见内部文档。
+计量预留：核心只负责发审计/指标事件流；计量与计费是事件流的下游消费者，不属于开源核心
+（接缝设计见 §14.1，代码随平台层动工引入）。计量单位与定价属商业策略，见内部文档。
 
 
 ## 13. 部署形态
 
-单进程 MCP server（stdio/HTTP）+ sandbox.yaml 配置 + SQLite（审计/注册表）+ 文件系统（profile/snapshot 存储）
+单进程 MCP server（stdio/HTTP）+ sandbox.yaml 配置 + SQLite（审计/注册表）+ 文件系统（快照/工作目录存储）
 
 ## 14. 开源核心与平台层边界
 
@@ -265,15 +272,14 @@ class Backend(ABC):
 
 ---
 
-## 重构差距速览（v0.3.x → v3 架构）
+## P0 施工清单（对照 spec 的实现顺序）
 
-| 现状 | 目标 | 差距 |
+| 里程碑 | 内容 | 对应章节 |
 |---|---|---|
-| Backend 无 capabilities | capabilities 声明 | 中 |
-| audit 事件类型单一 | 12 类事件 + 脱敏 | 中 |
-| 无资源模型抽象 | resource_id/type/元数据 | 大 |
-| 无快照/回滚 | snapshot/revert + baseline | 大（P0） |
-| safety 只有警告 | 策略模型（默认放行+显式收紧） | 中 |
-| 无凭证子系统 | inject/recycle + 快照排除 | 大（P1） |
-| 无 metrics | 指标采样 | 中（P1） |
-| auth 单一 token | 三层身份（tenant/task/session） | 中（P2） |
+| P0-m1 ✅ | 资源模型 + backend 契约 + 快照/策略/审计骨架（纯契约，零死代码） | §2 §10 |
+| P0-m2 | SQLite 审计 sink + 内存注册表 + 状态机（含并发仲裁锁） | §3 §6 §13 |
+| P0-m3 | docker backend：create/exec/snapshot(commit)/restore + 两轴挂载 | §7 §10 |
+| P0-m4 | sandbox.yaml 配置装配 + MCP server（工具面按 P0 子集暴露） | §4 §13 |
+
+P1：策略资源化（网络边界）+ 凭证注入/回收 + 审计脱敏 + workdir 快照轴
+P2：三层身份 + metrics + vm/k8s backend 评估

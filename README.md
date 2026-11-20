@@ -28,12 +28,12 @@ Agent 执行环境的统一资源管理平台（Go）。为 AI Agent 提供**可
 
 ```
 cmd/sandboxd/        # 控制面入口（MCP server，P0-m2 接入）
-pkg/resource/        # 资源模型：类型 / capability / 状态机 / 三层身份 / 元数据
+pkg/resource/        # 资源模型：类型 / capability / 元数据 / 状态常量
 pkg/backend/         # 数据面契约：Backend 接口 + 注册表 + ErrUnsupported
-pkg/snapshot/        # 快照子系统：注册表 / revert 五步流程 / 保留策略
-pkg/policy/          # 策略资源：网络 / 命令（默认放行）/ 配额 / TenantQuota
-pkg/audit/           # 审计：12 类事件 / 脱敏 / Bus 事件流（平台层计量接缝）
-docs/design-spec-v3.md  # 参考架构（与 Python 版共享，§14 开源核心/平台层边界）
+pkg/snapshot/        # 快照子系统：注册表记录 / scope（env 轴先行，§7.0）
+pkg/policy/          # 策略资源：命令规则 + 默认放行决策（P1 扩展网络/配额）
+pkg/audit/           # 审计：事件记录 + Sink 接口 + Bus（SQLite sink P0-m2）
+docs/design-spec-v3.md  # 参考架构（P0 施工基线，§14 开源核心/平台层边界）
 ```
 
 ## Roadmap
