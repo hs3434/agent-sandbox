@@ -7,6 +7,8 @@
 // — capability is maximized, safety comes from snapshot/revert.
 package policy
 
+import "github.com/hs3434/agent-sandbox/pkg/resource"
+
 // Kind enumerates policy types (P0 uses KindCommand only).
 type Kind string
 
@@ -20,7 +22,7 @@ type Rule struct {
 
 // Policy is a versioned policy resource.
 type Policy struct {
-	ID      string
+	ID      resource.ResourceID
 	Kind    Kind
 	Version int
 	Rules   []Rule
