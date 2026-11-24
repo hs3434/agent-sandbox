@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.15 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式订阅，平台不向 Agent 脑内推消息）
+> 状态：v3.16 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式订阅）；v3.16 description 内嵌拉取指引（100% 可达面，感知习惯编码）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -203,6 +203,26 @@ notification 能力，但**客户端支持度参差**（推了可能无人收）
   同一批）
 - **与"心智归 Agent"一致**：平台不往 Agent 脑内塞消息；Agent 决定何时看，一看即得
   （感知权 = 拉模式；心智主权 = 不被打扰）
+
+**description 内嵌拉取指引（v3.16）**——四家客户端源码实证（opencode/dsh/hermes/
+Claude Desktop）后确认：唯一被普遍消费的通知通道是 `tools/list_changed`，其余通知
+类型无处理器/stub/静默丢弃。与其适配各运行时的通知路径，不如利用 MCP 协议的
+**100% 可达面**：工具 description 必然注入模型上下文——把拉取习惯写进状态敏感工具
+的 description，等于把"订阅"编码进 Agent 的本能，零基础设施、全客户端一致。
+
+- **只写状态敏感工具**（不烧不必要的 token）：`process_logs` / `process_signal`
+  （进程可能已死）、`shell_*` / `file_*`（machine 可能断线）、`state_get`（唤醒后
+  第一个调用，配对 events）
+- **description 模板**（一行，中英随实现）：`Before operating, check events(after_seq)
+  for body changes since your last check (process death, disconnection, state
+  transitions).`
+- **与错误内嵌指引互补**：description 负责"事前习惯"（主动拉），错误 hint 负责
+  "事中发现"（v3.14 L3 立即失败错误已内嵌 reconnect 指引）——两面合成完整感知路径
+- **模型依从性诚实条款**：description 指引不保证 100% 依从（instruction following
+  中等敏感）——它提高拉取概率但不担保；可靠性兜底仍是 L3 立即失败 + wait 阻塞语义，
+  指引是增强不是依赖
+- **token 成本边界**：只在 4 类状态敏感工具加一行（约 +40 tokens/工具面），不全量
+  加（11 工具全加 = 行为与上下文双重浪费）
 
 ## 5. 权限与策略模型
 
@@ -823,4 +843,28 @@ P2 落地）；其余随 P1/P2 落地。
 - 影响: §4.4 新增、工具清单 +1（events）、process_logs 加 wait 参数；感知权 =
   拉模式（Agent 决定何时看、一看即得），与 v3.14 断线五层的 L2 状态迁移闭环
   （events 可增量消费状态迁移）
+- 日期: 2026-11-24
+
+### AD-018: description 内嵌拉取指引——用 100% 可达面编码感知习惯（v3.16）
+
+- 状态: Accepted
+- 背景: 四家客户端源码实证（opencode / deepseek-harness / hermes / Claude Desktop 生态）
+  确认：唯一被普遍消费的 server → client 通知是 `tools/list_changed`；`resources/updated`
+  无处理器或 stub；`notifications/message` 静默丢弃（hermes 源码注释自证 SDK 默认行为
+  = discard）。主动推送需要逐运行时适配（opencode 自建 events scheme / dsh+hermes
+  只认工具面变化）——适配成本高且仅覆盖部分客户端。而工具 description 是 MCP 协议
+  的 100% 可达面：必然注入模型上下文，全客户端一致
+- 备选方案:
+  - 逐运行时推送适配层（notify.Sink 接缝 + opencode-events/tools-list adapter）:
+    暂缓 — 无真实消费者前不施工（AD-004）；触发条件 = P2 出现"长任务轮询烧上下文"
+    的真实用户诉求
+  - 全量工具 description 加拉取指引: 拒绝 — 11 个工具全加 = 上下文与行为双重浪费，
+    非状态敏感操作（resource_create/snapshot 等）无此需求
+  - 状态敏感工具 description 加一行指引: 采纳 — process_logs/process_signal（进程
+    可能已死）、shell_*/file_*（machine 可能断线）、state_get（唤醒首调配对 events）
+- 决策: 4 类状态敏感工具的 description 内嵌一行拉取指引（约 +40 tokens/工具面）；
+  与错误内嵌指引互补（description = 事前习惯，L3 立即失败错误 = 事中发现）；
+  诚实条款：指引提高拉取概率但不担保依从性，可靠性兜底仍是 L3 + wait 阻塞语义
+- 影响: §4.4 新增小节、P0-m4 MCP server 实现时 description 模板随工具面落地；
+  推送适配层（notify.Sink）留待 P2，与 §14.1 计量接缝同构（核心发流，下游适配）
 - 日期: 2026-11-24
