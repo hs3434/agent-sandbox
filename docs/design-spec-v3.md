@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.8 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归 session 本体（MCP 直连，记手的状态）；v3.7 session 键跨连接稳定 + commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离，播种头收缩）
+> 状态：v3.9 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化（匿名键值，平台不建模会话）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -65,7 +65,7 @@ resource_id = "{tenant}:{type}:{name}"
 ```yaml
 resource_id, type, capabilities, backend, status,
 tags: {tenant, project, purpose},
-created_at, owner(session/任务)
+created_at, owner(任务标识，客户端语义)
 ```
 
 limits（cpu/memory/pids）属于 exec_env 的创建规格（ExecEnvSpec，不可变），
@@ -114,26 +114,26 @@ snapshot / revert / snapshot_list / snapshot_delete（均带 scope: env|workdir|
 audit_query / metrics / env(capabilities)
 shell_* / file_*（capability 校验后路由到数据面）
 exec_async / process_list / process_logs / process_signal（进程手，P0-m3，见 §4.2）
-state_get / state_put（自状态文档，MCP 直连，见 §4.1）
+state_get(key) / state_put(key, doc)（匿名键值记忆文档，MCP 直连，见 §4.1）
 status（本体感觉：聚合只读的身体事实，见 §4.3）
 
-### 4.1 自状态文档（Agent 的本体感觉，AD-008）
+### 4.1 自状态文档（Agent 的记忆，AD-008）
 
 **记录的是手的状态，不是 workdir 的状态**。workdir 是 Agent 随时切换、可多开的视角
 （对人：打开一个文件夹就是一个 workdir；对 Agent 同理）——不是本体的锚点。状态文档
-属于 **Agent session 本体**，记录其**握持的手 = 当前连接的机器/容器集合**（在此容器
-跑测试、在那台远程机部署……）。
+记录 Agent **握持的手 = 当前连接的机器/容器集合**（在此容器跑测试、在那台远程机
+部署……）。
 
-载体：**MCP 直连**（`state_get` / `state_put`），平台侧持久化（SQLite，随 session）。
+载体：**MCP 直连**（`state_get` / `state_put`），平台侧持久化（SQLite，键值文档）。
 不落 workdir——workdir 换了文档不换；wake 一发生即可读，无需等 workdir 重挂。
 
-**session 键 = 命名的工作身份（跨连接稳定）**：MCP 每次连接都有协议层 `initialize`
-握手，但业务语义上连接幂等无状态——持久化在键上，不在连接上。`session_id` 由客户端
-显式声明（不传则 `default`）：今天连、明天连，同一键读同一份文档，重连不失忆。
-生命周期：显式声明创建 → 跨连接存续 → 删除或 TTL GC（P1）。
+**匿名键值，平台不建模会话（v3.9 修正）**：session 是 Agent 会话管理的范畴（心智层），
+平台（身体层）键控 `session_id` 是越界。平台只提供**匿名键值文档存取**：`key` 由客户端
+自带、平台不解释（叫 `session:rnaseq` 还是 `agent-x/proj` 是客户端的语义），只保证
+按键持久化、跨连接稳定、删除或 TTL GC（P1）。持久化在键不在连接，重连不失忆。
 
-- **播种 = 最小引导（v3.8 收缩）**：session 首次接入时平台只写三样——session 标识、
-  一句"活体事实调 status"、勿存秘密警告。**不携带 env 清单/网络位置等会腐烂的事实**
+- **播种 = 未命中即引导（v3.9）**：`state_get(key)` 未命中时返回引导模板（含一句
+  "活体事实调 status"、勿存秘密警告）。**不携带 env 清单/网络位置等会腐烂的事实**
   （v3.5-3.7 曾计划播种全量身体事实，但平台承诺不改写文档 ⇒ 播种即过时；活体事实
   改由 status 实时供给，见 §4.3）
 - **维护**：Agent 自己读、自己写——记任务上下文、哪些进程应该在跑、下一步计划；
@@ -141,7 +141,7 @@ status（本体感觉：聚合只读的身体事实，见 §4.3）
 - **边界：自叙记忆 ≠ 治理真相**。文档可以记错、可以过时；治理真相在 status / 审计
   事件流 / `env/inspect` 实时查询。平台不校验文档内容（否则它就成了第二个需要审计
   的对象）
-- **秘密卫生（诚实条款）**：文档是明文存储且平台不校验——播种警告"勿存秘密"；
+- **秘密卫生（诚实条款）**：文档是明文存储且平台不校验——引导警告"勿存秘密"；
   凭证走注入/回收通道，不走记忆通道（次要优先级但一致性要保）
 - **唤醒闭环 = 感觉 + 记忆对账（v3.8）**：wake → status（身体真况）+ state_get
   （我的记忆）→ 对账差异（记忆里该跑的进程 status 里是 dead？）→ 修正决策（重启）
@@ -151,14 +151,16 @@ status（本体感觉：聚合只读的身体事实，见 §4.3）
 
 **只读聚合，零新状态**：从注册表/句柄表/策略引擎实时计算，无独立存储、无写路径。
 
-返回：握持的 env 清单（各自生命周期/backend）、进程句柄 alive/dead、可用 capability、
+返回：实例内全部 env 清单（各自生命周期/backend）、进程句柄 alive/dead、可用 capability、
 网络位置（内网|外网）、凭证在场元数据（非值）。
 
 - 与 §4.1 分工：**status = 本体感觉（永远真，平台算）**，**state doc = 记忆（可过时，
   Agent 写）**——status 是 state doc 的活体校准源
-- 与 `resource_inspect` 关系：inspect = 单资源深查；status = session 全景浅查。
+- 与 `resource_inspect` 关系：inspect = 单资源深查；status = 实例全景浅查。
   Agent 日常先 status 后按需 inspect，一次调用免多次往返
-- **唤醒降级链不失忆**：容器丢失走重建时，状态文档在平台侧随 session 存续——
+- 作用域：P0 单用户单实例 = 全实例即全景；P2 治理身份（§11 三层 Subject）落地时
+  按 Subject 过滤——治理元数据不等于会话管理，届时也不引入 session 概念
+- **唤醒降级链不失忆**：容器丢失走重建时，状态文档在平台侧 SQLite 键值存续——
   身体可以换，记忆不丢（比 v3.5 的 workdir 方案更早可用：先有感觉，再有身体）
 
 ### 4.2 进程手（per-env 句柄，非全局资源类型）
@@ -549,6 +551,21 @@ P0 阶段只强制前 6 条（revert/放行/不可变/凭证/冷启动/exec）�
   （累计 running，不含睡眠；凭证次要优先级，P1 落地）
 - 影响: §3.1/§3.3/§4.1/§4.2/§7.0/§7.3/§10/AD-007 更新；P0 快照子系统收窄为
   workdir 轴 + 镜像引用（更小施工面）
+- 日期: 2026-11-24
+
+### AD-011: 记忆键去 session 化——匿名键值，平台不建模会话（v3.9）
+
+- 状态: Accepted（Supersedes AD-009 的 session 键决策①）
+- 背景: session 是 Agent 会话管理的范畴（心智层）；平台（身体层）键控 session_id
+  违反分层纪律（I7）与 AD-008 自己立的边界（"心智归 Agent"）——身体在替心智登记会话
+- 备选方案:
+  - session_id 键控（AD-009 ①）: 撤回 — 键语义（会话）平台必须解释 = 越界建模
+  - 匿名键值: 采纳 — key 由客户端自带、平台不解释，只保证持久化/跨连接稳定/GC
+- 决策: `state_get(key) / state_put(key, doc)` 匿名键值文档；未命中返回引导模板
+  （替代"播种"——平台从此无任何写文档路径）；status 作用域 = P0 全实例，P2 按
+  治理 Subject 过滤（治理元数据 ≠ 会话管理）
+- 影响: §4.1/§4.3/工具清单更新；键语义整体活在客户端层；§11 三层身份不受影响
+  （那是治理身份供给，非会话管理）
 - 日期: 2026-11-24
 
 ### AD-010: status 工具——本体感觉与记忆分离（v3.8）
