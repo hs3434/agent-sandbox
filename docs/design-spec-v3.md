@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.13 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（工具面按阶段分组、full 快照降级、P0 零快照存储、事件类型分组、WebSocket 降评估）
+> 状态：v3.14 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层协议，ssh 瘦模式降 bootstrap）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -35,12 +35,14 @@
 ## 1. 总体分层
 
 ```
-控制面（MCP API + 资源模型 + 治理）→ 编排层（生命周期/恢复/归属）→ 数据面（Backend 执行器）
+控制面（MCP API + 资源模型 + 治理）→ 编排层（生命周期/恢复/归属）→ 数据面（本地执行器 / 远程伴生服务）
+                                                                        ↑ 协议对话（§10.0）
 ```
 
 - 控制面/数据面分离：Agent 只见资源模型，不见底层实现
 - 编排层承载跨资源治理：恢复调度、配额、任务归属
-- 数据面只做执行 + 上报（结果、指标、状态事件）
+- 数据面只做执行 + 上报（结果、指标、状态事件）；远程目标由伴生服务（Go 静态
+  二进制）承载数据面语义——本地/远端同构程序，协议对话而非隧道透传（§10.0）
 
 ## 2. 资源模型
 
@@ -343,14 +345,52 @@ class Backend(ABC):
     capabilities: set[str]
     create/start/stop/remove
     exec / read_file / write_file
-    snapshot(exclude_secrets=True) / restore(ref)
-    metrics()
+    snapshot(exclude_secrets=True) / restore(ref)   # P1
+    metrics()                                        # P2
+    health()                                         # 连接健康（v3.14）
 ```
+
+### 10.0 远程伴生服务（remote companion，v3.14 架构第一公民）
+
+**背景**：sandbox-mcp（Python 前身）的远程模式 = 瘦客户端——SSH 隧道透传 PTY，
+所有健壮性逻辑（Windows 代码页、GBK 编码、PowerShell 管道模式无 Ctrl-C）都要本地端
+逐平台适配，**异构在客户端这一端，永远追不完**。
+
+**决策（vscode Remote-SSH 语义）**：连接远程时部署**伴生服务**——Go 静态自包含
+二进制（一次编译，Linux/Windows 直接运行），之后本地 sandboxd 与远端伴生服务做
+**协议对话**而非隧道透传。健壮性由两端**同构程序**共同保证：编码/信号/PTY/进程
+语义在协议层对齐，异构被伴生进程封装。
+
+- **Go 静态二进制是采纳前提**：伴生服务必须"一次编译、scp 过去直接跑"——解释型
+  语言（Python 需远端装解释器/依赖）不可行，这是本项目选择 Go 的架构级理由
+- **ssh 瘦模式降级为 bootstrap**：裸 SSH 只剩一个职责——送二进制、拉起伴生服务、
+  握手、退役（vscode 先用 ssh 上传 vscode-server 同构）；此后一切操作走伴生协议
+- **会话与连接解耦（tmux 语义）**：shell/进程会话挂在伴生服务下、不挂在 SSH 连接上
+  ——断线 = 遥控器没信号，远端会话存活；重连自动接管（见断线协议）
+- **信任模型（默认半自动）**：伴生二进制 scp 至远端 + 打印启动命令，**人工确认执行**
+  （部署常驻 daemon 信任门槛高）；全自动模式（vscode 式，连接即部署）为配置开关，
+  默认关
+- **功能继承声明**：本 backend 契约的执行语义（PTY 持久会话、原子文件写、渐进发现、
+  审计查询、敏感路径警告）继承 sandbox-mcp v0.3 已验证设计，不重新发明
+
+**断线协议（五层，v3.14）**——瘦模式的结构性缺陷（SSH 死 = 一切死，Agent 只能用
+试错发现故障）在伴生架构下获得完整解法：
+
+| 层 | 机制 | 瘦模式能否做到 |
+|---|---|---|
+| L1 探测 | sandboxd 对伴生服务心跳 ping（间隔 5s，3 次失败判断线） | ❌ 只能被动等操作失败 |
+| L2 表达 | machine 状态：`connected / disconnected / reconnecting`，status 一眼看穿 | ❌ 无连接状态概念 |
+| L3 反馈 | disconnected 时 exec/写文件**立即失败**（明确错误："machine disconnected, awaiting reconnect"），不挂超时 | ⚠️ 只能做本层 |
+| L4 解耦 | 会话存活于伴生服务，断线不杀会话（远端进程/PTY 原样） | ❌ SSH 死即 SIGHUP 全灭 |
+| L5 自愈 | sandboxd 自动重连握手，成功后会话原样找回，Agent 无感 | ❌ |
+
+Agent 体验：从"不断尝试开新 powershell 试错"变为"status 瞥一眼 → disconnected →
+等自愈或按错误指引行动"。
 
 | Backend | capabilities | snapshot 实现 | 隔离级别 | 适用 |
 |---|---|---|---|---|
 | docker | shell/files/snapshot | wake 续用 + 标准镜像重建（commit 快照 P1 评估） | 容器（共享内核） | 默认：开发/执行，秒级启停 |
-| ssh | shell/files | 无（诚实声明） | 无（复用既有主机） | 接入既有物理机/远程开发机 |
+| ssh | shell/files（伴生模式，见 §10.0） | 无（诚实声明） | 无（复用既有主机） | 接入既有物理机/远程开发机；瘦模式仅作 bootstrap |
 | vm (future) | shell/files/snapshot | libvirt/qemu 外部快照（VM 级 CoW）或存储层快照（qcow2 内部快照/切片） | 硬件级虚拟化（独立内核） | 需要内核隔离/不同 OS/系统级实验（内核模块、网络栈、多发行版矩阵） |
 | k8s (future) | shell/files/snapshot | Pod 重建 + PVC 快照 | 容器编排（多节点） | 平台托管形态：多节点调度、PVC 原生两轴快照 |
 
@@ -436,7 +476,8 @@ class Backend(ABC):
 | P0-m3 | docker backend：create/exec/snapshot（标准镜像重建，commit P1 评估）/restore + 两轴挂载 | §7 §10 |
 | P0-m4 | sandbox.yaml 配置装配 + MCP server（工具面按 P0 子集暴露） | §4 §13 |
 
-P1：策略资源化（网络边界）+ 审计脱敏 + workdir 快照轴 + commit 快照评估
+P1：策略资源化（网络边界）+ 审计脱敏 + workdir 快照轴 + commit 快照评估 +
+**ssh 伴生服务**（远端 sandboxd-lite 二进制 + 断线五层协议，§10.0——P1 第一个硬仗）
 P2：三层身份 + metrics + vm/k8s backend 评估
 
 验证矩阵（`docs/verification/feature-test-matrix.md`）在 P0-m3 首个可运行 backend
@@ -712,4 +753,29 @@ P2 落地）；其余随 P1/P2 落地。
   类型按阶段分组，file_op 并入 tool_call detail；⑤ §12 WebSocket 降评估项
 - 影响: P0 工具面 = 10 个左右，每个有消费者；快照子系统从"P0 收窄"变为"P0 不存在"；
   P0-m1 已建的 pkg/snapshot 骨架保留（契约无害），实现随 P1
+- 日期: 2026-11-24
+
+### AD-016: 远程伴生服务——协议对话取代隧道透传，断线从试错变感知（v3.14）
+
+- 状态: Accepted
+- 背景: sandbox-mcp（Python 前身）远程模式是瘦客户端——SSH 隧道透传 PTY，Windows
+  代码页/GBK 编码/PowerShell 管道无 Ctrl-C 等坑全在本地端逐平台适配，异构追不完；
+  且 SSH 断线无连接状态概念，Agent 只能试错（不断开新 powershell），烧上下文。
+  根因：健壮性逻辑放错了位置——远端异构性应由**远端同构程序**封装（vscode
+  Remote-SSH 语义），而"远端部署任意程序"要求自包含静态二进制 ⇒ **Go 是架构级
+  必要条件**，非偏好
+- 备选方案:
+  - 瘦模式继续逐平台适配: 拒绝 — 天花板已到（sandbox-mcp v0.3 实证），每平台
+    一批坑，永不收敛
+  - 伴生服务（协议对话）: 采纳 — 两端同构，编码/信号/PTY 语义协议层对齐
+  - 全自动部署伴生: 部分采纳 — 体验好但"往服务器部署常驻 daemon"信任门槛高；
+    默认半自动（scp + 打印启动命令 + 人工确认），全自动为配置开关
+- 决策: ① ssh backend 主模式 = 伴生服务（sandboxd-lite Go 静态二进制），瘦模式降级
+  bootstrap（送二进制/拉起/握手/退役）；② 会话与连接解耦（tmux 语义，断线不杀会话）；
+  ③ 断线五层协议（心跳探测/connected 状态/立即失败反馈/会话解耦/自动重连自愈，
+  §10.0）；④ 执行语义继承 sandbox-mcp 已验证设计（PTY/原子写/渐进发现/敏感路径
+  警告），sandbox-mcp 远程模式冻结新特性（Python 版 = 单机身体）
+- 影响: §1 分层补远端、§10.0 新增、Backend 契约加 health()；P1 路线图加伴生服务
+  （第一个硬仗）；差异化定位：接入**用户已有机器**的远程身体（E2B/Daytona 的远程
+  是平台托管沙箱，不接入既有主机——伴生架构是该赛道的独有路径）
 - 日期: 2026-11-24
