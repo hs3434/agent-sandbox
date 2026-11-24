@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.12 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留（P0 唯一认证 = MCP 入口门锁）
+> 状态：v3.13 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（工具面按阶段分组、full 快照降级、P0 零快照存储、事件类型分组、WebSocket 降评估）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -108,14 +108,15 @@ injected → active → recycled（任务结束）/ expired（超时兜底）
 ## 4. 控制面工具清单（MCP）
 
 resource_create / resource_inspect / resource_remove
-policy_get / policy_set / policy_versions / policy_revert
-credential_inject / credential_recycle（无 read）（P2 预留，见 §9）
-snapshot / revert / snapshot_list / snapshot_delete（均带 scope: env|workdir|full 参数，默认 env）
-audit_query / metrics / env(capabilities)
 shell_* / file_*（capability 校验后路由到数据面）
 exec_async / process_list / process_logs / process_signal（进程手，P0-m3，见 §4.2）
+revert（P0 = 标准镜像重建，见 §7.0；时点回滚随快照轴 P1）
 state_get() / state_put(doc)（记忆文档：单文档无键，MCP 直连，见 §4.1）
 status（本体感觉：聚合只读的身体事实，见 §4.3）
+env(capabilities)
+—— P1：policy_get / policy_set / policy_versions / policy_revert（网络策略落地随开）；
+snapshot / snapshot_list / snapshot_delete（workdir 快照轴，§7.1）
+—— P2：credential_inject / credential_recycle（无 read，见 §9）；metrics
 
 ### 4.1 自状态文档（Agent 的记忆，AD-008）
 
@@ -189,7 +190,11 @@ status（本体感觉：聚合只读的身体事实，见 §4.3）
 ## 6. 审计子系统
 
 事件模型：{id, ts, tenant, subject, resource_id, action, outcome, duration_ms, detail(脱敏)}
-类型：tool_call/file_op/network_decision/policy_change/snapshot_created/snapshot_reverted/credential_injected/credential_recycled/resource_created/resource_removed/policy_blocked/error
+类型（按引入阶段分组，勿预建无消费者的事件类型）：
+- P0：tool_call / resource_created / resource_removed / error
+- P1：snapshot_created / snapshot_reverted / policy_change / policy_blocked
+- P2：network_decision / credential_injected / credential_recycled（file_op 归入
+  tool_call 的 detail，不单列——文件操作经 shell/file 工具即 tool_call）
 脱敏：秘密值存 sha256 指纹，明文永不落库
 用途：Agent 复盘（自省决策链）、任务失败定位、安全追溯
 
@@ -239,21 +244,31 @@ exec_env
 其可观测性与管控由审计（network_decision / audit_query）与网络策略承担。
 docker 沙箱同理（外部交互占比小而已）。
 
-### 7.1 模型
-{id, resource_id, name, created_at, type: baseline|manual|auto, scope: env|workdir|full, size_bytes, backend_specific, status, excluded: [credential_ids, workdir]}
+### 7.1 模型（P1——随 workdir 快照轴落地，P0 无快照存储）
 
-- scope=env：仅环境态（默认）；scope=workdir：仅工作目录；scope=full：同一时刻成对打（全量检查点）
-- full 快照在注册表内是两条关联记录（env + workdir），`full_pair_id` 关联，恢复时可组合
+> v3.13 标注：env commit 快照已裁（AD-009）、baseline = 镜像引用（零存储）、
+> workdir 快照轴 P1——P0 没有任何快照存储，本节是 P1 的设计留档。
 
-### 7.2 revert 流程（五步，env 轴）
+{id, resource_id, name, created_at, type: manual|auto, scope: workdir, size_bytes, backend_specific, status}
 
+- ~~scope=full / full_pair_id~~（降 P1+ 评估：env 轴快照不存在后"成对打"结构上不可能，
+  仅当 env commit 快照 P1 回归且出现真实需求时重启——勿增实体）
+- ~~type: baseline~~（baseline := 标准镜像引用，不是快照记录，见 §7.3）
+- ~~excluded: credential_ids~~（凭证 P2；workdir 永不在 env 快照内的约束保留）
+
+### 7.2 revert 流程（P0 = 镜像重建三步；快照点回滚随快照轴 P1 扩为五步）
+
+P0（env 轴，无快照存储）：
+1. 校验（存在/归属/权限）→ 2. 停止实例 + 丢弃容器 → 3. 从标准镜像重建 + **重挂原 workdir 卷**
+
+P1（有快照后扩为五步）：
 1. 校验（存在/归属/权限/scope 匹配）
 2. 停止实例（graceful → 超时强杀）+ **quiesce workdir**：fsync 挂载卷（crash-consistent 即可，日志文件系统可恢复；应用级 flush hook 可选）
 3. 从快照载体重建 env，**重挂原 workdir 卷**（非快照内）
-4. 恢复非状态资源：策略从 policy 当前版本重新绑定；凭证重新 inject；workdir 所有权修正（uid 映射）；标签沿用
+4. 恢复非状态资源：策略从 policy 当前版本重新绑定；凭证重新 inject（P2）；workdir 所有权修正（uid 映射）；标签沿用
 5. 校验（healthcheck）+ 审计
 
-失败补偿链（②③ 失败窗口）：
+失败补偿链（②③ 失败窗口，两版通用）：
 - ② 失败：实例已在停路径，重试强杀；workdir 卷不受影响
 - ③ 重建失败：重试一次 → 仍失败则从 **标准镜像（baseline 引用）**重建 → 镜像也丢 → 环境标 error，
   保留旧实例 backend 残留与 workdir 卷供人工排查（workdir 永不在补偿链中被销毁）
@@ -279,12 +294,12 @@ docker 沙箱同理（外部交互占比小而已）。
 
 引用计数：被 revert 链引用的快照不轮转；跨轴组合恢复时 full_pair 双方一起计数。
 
-## 8. 配置子系统
+## 8. 配置子系统（P1 起逐步引入）
 
-网络策略（allow_domains/allow_cidr/deny_patterns，默认 deny 内网）
-命令策略（默认不拦任何命令——能力释放）
-限额定义（cpu/memory/pids/带宽——保活语义）
-时限（任务最大时长）
+网络策略（allow_domains/allow_cidr/deny_patterns，默认 deny 内网）——P1
+命令策略（默认不拦任何命令——能力释放）——P0 结构存在（默认空），规则面 P1
+限额定义（cpu/memory/pids/带宽——保活语义）——P1（随配额执行）
+时限（任务最大时长）——P1（与凭证 expired 同钟机制）
 全部走版本化恢复通道
 
 ## 9. 凭证子系统（P2 预留，P0 无消费者）
@@ -365,7 +380,9 @@ class Backend(ABC):
 
 ## 12. 可观测
 
-审计事件流 + metrics（docker stats 时间序列）+ WebSocket 遥测推送（状态变更通知）
+审计事件流 + metrics（docker stats 时间序列，P2）。WebSocket 遥测推送降为评估项
+（P0/P1 Agent 轮询 status 已覆盖状态感知；推送仅当出现"事件延迟敏感"的真实场景——
+勿增实体）。
 
 计量预留：核心只负责发审计/指标事件流；计量与计费是事件流的下游消费者，不属于开源核心
 （接缝设计见 §14.1，代码随平台层动工引入）。计量单位与定价属商业策略，见内部文档。
@@ -674,4 +691,25 @@ P2 落地）；其余随 P1/P2 落地。
   条件为"快照出境检疫"（本地快照无需）
 - 影响: §9/§4/§13/P1 清单/NFR 分期更新；P0 施工面进一步收窄（凭证子系统完全
   出局）；AD-013 的"平台通道"承诺顺延至 P2 兑现
+- 日期: 2026-11-24
+
+### AD-015: 奥卡姆清扫——工具面按阶段分组，P0 零快照存储（v3.13）
+
+- 状态: Accepted
+- 背景: 全文"谁消费它"拷问发现：v3.7 裁剪 commit 快照后 **P0 没有任何快照存储**
+  （env commit 已裁、baseline = 镜像引用零存储、workdir 快照轴 P1），但工具清单
+  仍在发放 snapshot_list/delete，§7.1 仍在描述 chunk hash 存储；full 快照在 env
+  轴快照不存在后结构上不可能；policy/metrics/凭证工具的主体均不在 P0
+- 备选方案:
+  - 保持工具清单全集 + 脚注标注阶段: 拒绝 — 未实现工具混在清单里，Agent 客户端
+    无法区分"能用"与"预告"，接口面撒谎
+  - 工具清单按阶段分组: 采纳 — P0 组（10 个）明确可实现可测试；P1/P2 组为预告
+  - full 快照保留字段: 拒绝 — 结构上不可能（env 快照不存在），删除逻辑而留字段
+    是僵尸实体；P1 评估后按真实需求重启
+- 决策: ① 工具清单按 P0/P1/P2 分组（P0 = resource_* ×3 + shell/file + 进程手×4 +
+  revert + state_*×2 + status + env）；② §7.1 标 P1 留档，full/baseline/excluded
+  三字段删除；③ §7.2 revert 分 P0 三步（镜像重建）/P1 五步（快照回滚）；④ §6 事件
+  类型按阶段分组，file_op 并入 tool_call detail；⑤ §12 WebSocket 降评估项
+- 影响: P0 工具面 = 10 个左右，每个有消费者；快照子系统从"P0 收窄"变为"P0 不存在"；
+  P0-m1 已建的 pkg/snapshot 骨架保留（契约无害），实现随 P1
 - 日期: 2026-11-24
