@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.6 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先、commit 备选）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归 session 本体（MCP 直连，记手的状态而非 workdir 状态）
+> 状态：v3.7 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归 session 本体（MCP 直连，记手的状态）；v3.7 session 键跨连接稳定 + commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -85,8 +85,7 @@ created → starting → running → stopping → stopped → removing → remov
   保留，文件系统原样）；wake = start **续用**（非重建，进程不复活）——比 env revert
   （重建）便宜的日常续用通道。恢复阶梯：wake（续用）< revert-from-commit < 标准镜像重建
 - **唤醒失败降级链**：容器丢失（宿主重启/docker prune）→ wake 报错 → 自动走重建链
-  （标准镜像/baseline + workdir 重挂 + 自状态文档仍在（MCP 直连，见 §4.1）——降级不失忆）
-- 策略时限默认仅计 running（睡眠不烧执行时长，占磁盘；磁盘配额 P1）
+  （标准镜像/baseline + workdir 重挂 + 自状态文档仍在（MCP 直连，见 §4.1）——降级不失忆）- 策略时限默认仅计 running（睡眠不烧执行时长，占磁盘；磁盘配额 P1）
 - 无 update：改镜像/限额 = 重建（不可变基础设施）
 - **并发仲裁（P0 必需）**：每个 exec_env 持有编排层互斥锁——同一时刻只允许一个生命周期
   迁移或 revert 在途；第二个操作立即拒绝（409 conflict，非排队）。revert 内部五步视为
@@ -97,9 +96,14 @@ created → starting → running → stopping → stopped → removing → remov
 created(v1) → modified(v2) → ... → revert(v1) 生成新版本
 ```
 ### 3.3 凭证
+
 ```
 injected → active → recycled（任务结束）/ expired（超时兜底）
 ```
+
+- expired = 防泄漏兜底：注入后任务死亡无人回收时，平台强制失效。TTL 与任务时限
+  **同钟**（累计 running，不含睡眠）——墙钟会让睡眠期间凭证悄悄过期，wake 后撞上
+  失效的手。凭证是次要优先级（赋能第一）：此机制 P1 落地，P0 只留状态常量
 
 ## 4. 控制面工具清单（MCP）
 
@@ -122,6 +126,11 @@ state_get / state_put（自状态文档，MCP 直连，见 §4.1）
 载体：**MCP 直连**（`state_get` / `state_put`），平台侧持久化（SQLite，随 session）。
 不落 workdir——workdir 换了文档不换；wake 一发生即可读，无需等 workdir 重挂。
 
+**session 键 = 命名的工作身份（跨连接稳定）**：MCP 每次连接都有协议层 `initialize`
+握手，但业务语义上连接幂等无状态——持久化在键上，不在连接上。`session_id` 由客户端
+显式声明（不传则 `default`）：今天连、明天连，同一键读同一份文档，重连不失忆。
+生命周期：显式声明创建 → 跨连接存续 → 删除或 TTL GC（P1）。
+
 - **播种**：session 首次接入时平台写入"身体事实"头部（tenant/session 标识、当前握持
   的 env 清单及各自 backend / 网络位置 内网|外网 / 可用 capability），此后**平台永不
   改写**；握持清单可由 Agent 显式请求平台代刷新（snapshot of governance facts）
@@ -129,12 +138,17 @@ state_get / state_put（自状态文档，MCP 直连，见 §4.1）
   这是唤醒后自我定位的依据（wake → state_get → 重启所需进程 → 继续干活）
 - **边界：自叙记忆 ≠ 治理真相**。文档可以记错、可以过时；治理真相在审计事件流与
   `env/inspect` 实时查询。平台不校验文档内容（否则它就成了第二个需要审计的对象）
+- **秘密卫生（诚实条款）**：文档是明文存储且平台不校验——播种头部带一行警告
+  "勿存秘密"；凭证走注入/回收通道，不走记忆通道（次要优先级但一致性要保）
 - **唤醒降级链不失忆**：容器丢失走重建时，状态文档在平台侧随 session 存续——
   身体可以换，记忆不丢（比 v3.5 的 workdir 方案更早可用：先有感觉，再有身体）
 
 ### 4.2 进程手（per-env 句柄，非全局资源类型）
 
-- `exec_async`：起后台进程，返回 `{pid, handle_id}`；进程注册在 per-env 句柄表
+- `exec_async`：起后台进程，返回 `{pid, handle_id}`；进程注册在 per-env 句柄表，
+  **句柄持久化 SQLite（P0-m2）**——控制面重启句柄不丢，`process_logs` 游标可续
+- **容器停止 → 异步进程全灭**（stop/snapshot 链路同理）：句柄显式标 dead，不静默清理
+  （Agent 可见死亡事实，对齐自状态文档记忆）
 - `process_list / process_logs(尾部+游标) / process_signal`：观察与干预
 - **平台不复活进程**（诚实条款）：容器停止 = 进程消亡；进程复活 = 重建应用状态，
   复杂且易腐——"该重启哪些进程"由 Agent 依自状态文档决定，平台只保证身体持久性
@@ -165,22 +179,23 @@ exec_env 的可恢复状态拆为两个**正交轴**，各有独立快照流与�
 
 ```
 exec_env
-├── env 态（镜像层 + 容器层/VM 磁盘） → env 恢复：标准镜像重建（首选）+ commit 快照（备选）
+├── env 态（镜像层 + 容器层/VM 磁盘） → env 恢复：wake 续用（日常）+ 标准镜像重建（兜底）
 └── workdir（/workspace 挂载卷）      → workdir 快照（文件级，去重存储）
 ```
 
-**env 恢复策略（v3.4）——声明式优先、命令式兜底**：
+**env 恢复策略（v3.7 简化）——声明式真相，命令式快照暂缓**：
 
 | 恢复通道 | 机制 | 时机 | 代价 |
 |---|---|---|---|
-| 标准镜像重建（首选） | 从 Dockerfile 构建的标准镜像 `run`（重建式） | 环境 = 标准镜像 + workdir 时（常态） | 快（镜像缓存）、可复现、可审计 |
-| commit 快照（备选） | 先 **stop 容器再 commit** → `run` from tag | 环境有镜像之外的增量状态（Agent 临时装依赖）需保留时 | 慢（宽容，秒级～分钟级）、不可复现 |
+| wake 续用（日常） | start 复用容器可写层（非重建，进程不复活） | 环境没坏，只是睡醒 | 最便宜，文件系统原样 |
+| 标准镜像重建（兜底） | 从 Dockerfile 构建的标准镜像 `run` | 环境坏了 / 容器丢失 | 快（镜像缓存）、可复现、可审计 |
+| commit 快照（暂缓） | 先 stop 再 commit → run from tag | P1 评估：增量状态频繁且不值得 Docker 化时 | 慢、不可复现、独立快照流复杂度 |
 
-- **先 stop 再 commit**：消除崩溃一致性问题（commit 运行中容器会抓到半写状态）
-- **时间宽容**：标准镜像重建快、commit 恢复慢，两者都接受——恢复的正确性优先于速度，
-  NFR-1 的 revert 延迟只约束"标准镜像重建"路径（见 §15）
-- 与"执行环境不可变"哲学一致：环境的**声明式真相**在 Dockerfile，commit 只是运行时
-  增量的逃生舱，不替代声明
+- **增量状态的正向工作流 = 写进 Dockerfile**：Agent 装了镜像之外的依赖且需要保留，
+  修正声明（Dockerfile）而非快照运行时——环境的**声明式真相**在 Dockerfile，
+  与"执行环境不可变"哲学一致
+- **时间宽容**：恢复的正确性优先于速度，NFR-1 的 revert 延迟只约束"标准镜像重建"
+  路径（见 §15）
 
 - **环境是牛，工作目录是资产**：env revert 丢弃运行时，workdir 原样保留并重挂到新实例——
   环境搞坏 ≠ 丢工作成果（对齐 Docker commit 排除 volume / K8s 重建保留 PVC 的行业语义）
@@ -218,7 +233,7 @@ docker 沙箱同理（外部交互占比小而已）。
 
 失败补偿链（②③ 失败窗口）：
 - ② 失败：实例已在停路径，重试强杀；workdir 卷不受影响
-- ③ 重建失败：重试一次 → 仍失败则从 **baseline 快照**重建 → baseline 也坏 → 环境标 error，
+- ③ 重建失败：重试一次 → 仍失败则从 **标准镜像（baseline 引用）**重建 → 镜像也丢 → 环境标 error，
   保留旧实例 backend 残留与 workdir 卷供人工排查（workdir 永不在补偿链中被销毁）
 
 要点：revert 恢复"环境状态"，配置/凭证/workdir 永远走各自活通道——快照永不携带策略、秘密和新工作。
@@ -227,9 +242,18 @@ docker 沙箱同理（外部交互占比小而已）。
 
 | scope | 存储 | 保留 | 触发 |
 |---|---|---|---|
-| env | 标准镜像（Dockerfile）+ commit 快照（备选，先 stop 再 commit） | 标准镜像由 Dockerfile 版本管；commit N=5 轮转 + baseline 引用计数 | 标准镜像（构建产物）；自动 baseline（创建时）+ 手动打点 |
+| env | 标准镜像（Dockerfile） | 标准镜像由 Dockerfile 版本管 | 手动 snapshot 调用（env 轴快照暂缓，见下） |
 | workdir | 文件级去重（chunk hash） | N=20 轮转（便宜可高频） | 手动 + git 仓库可选 auto-stash（P1 优化） |
 | full | env+workdir 成对 | N=2 | 显式调用（重型检查点） |
+
+**baseline := 标准镜像引用（v3.7 简化）**：标准镜像优先后，创建时 env == 标准镜像，
+自动 baseline 的 commit 快照是零信息量复制——baseline 直接定义为标准镜像引用
+（零拷贝零成本），补偿链兜底 = 从标准镜像重建。
+**commit 快照暂缓（v3.7 裁剪）**：引入独立快照流（stop/commit/tag/轮转）复杂度不匹配
+当下收益——P0 的 env 轴恢复 = wake 续用 + 标准镜像重建两档；Agent 在 env 内装了
+镜像之外的增量依赖且需要保留时，正向工作流是**写进 Dockerfile**（声明式真相），
+回滚重建自然携带。commit 快照留作 P1 评估项（出现"增量状态频繁且不值得 Docker 化"
+的真实场景再引入）。
 
 引用计数：被 revert 链引用的快照不轮转；跨轴组合恢复时 full_pair 双方一起计数。
 
@@ -261,7 +285,7 @@ class Backend(ABC):
 
 | Backend | capabilities | snapshot 实现 | 隔离级别 | 适用 |
 |---|---|---|---|---|
-| docker | shell/files/snapshot | 标准镜像重建（首选）+ commit 快照（备选，先 stop 再 commit） | 容器（共享内核） | 默认：开发/执行，秒级启停 |
+| docker | shell/files/snapshot | wake 续用 + 标准镜像重建（commit 快照 P1 评估） | 容器（共享内核） | 默认：开发/执行，秒级启停 |
 | ssh | shell/files | 无（诚实声明） | 无（复用既有主机） | 接入既有物理机/远程开发机 |
 | vm (future) | shell/files/snapshot | libvirt/qemu 外部快照（VM 级 CoW）或存储层快照（qcow2 内部快照/切片） | 硬件级虚拟化（独立内核） | 需要内核隔离/不同 OS/系统级实验（内核模块、网络栈、多发行版矩阵） |
 | k8s (future) | shell/files/snapshot | Pod 重建 + PVC 快照 | 容器编排（多节点） | 平台托管形态：多节点调度、PVC 原生两轴快照 |
@@ -450,7 +474,7 @@ P0 阶段只强制前 6 条（revert/放行/不可变/凭证/冷启动/exec）�
 
 ### AD-007: env 恢复——标准镜像优先、commit 备选（先 stop 再 commit）
 
-- 状态: Accepted
+- 状态: Accepted → **Superseded（commit 部分，v3.7 由 AD-009 裁剪为暂缓）**
 - 背景: 原 env 快照 = `docker commit / run from tag`，但 commit 运行中容器有大问题：
   崩溃不一致（半写状态）、慢（大容器几十秒）、镜像层膨胀，与 NFR-1（revert p95<5s）矛盾
 - 备选方案:
@@ -484,4 +508,27 @@ P0 阶段只强制前 6 条（revert/放行/不可变/凭证/冷启动/exec）�
   ③ 睡眠/唤醒 Agent 自主（wake = start 续用，恢复阶梯最便宜档；失败自动降级重建）
 - 影响: §3.1（sleep/wake + 降级链）、§4.1/§4.2 新增、NFR-9/10（赋能度量）；
   唤醒闭环 = wake → state_get → 重启进程 → 继续干活；策略时限默认仅计 running
+- 日期: 2026-11-24
+
+### AD-009: v3.7 一致性收口——session 键/快照裁剪/句柄持久化/凭证同钟
+
+- 状态: Accepted
+- 背景: v3.6 自审暴露四个一致性缺口：① 状态文档"随 session 持久化"但 session 生命周期
+  未定义（session = 连接则重连失忆，文档失去存在意义）；② baseline commit 快照与标准
+  镜像零信息量冗余；③ 进程句柄表内存态，控制面重启即丢；④ 凭证 expired TTL 未定钟
+- 备选方案:
+  - session 绑连接: 拒绝 — MCP 连接幂等无状态（协议层 initialize 不携带业务身份），
+    绑连接 = 每日重开客户端即失忆
+  - session 显式命名键: 采纳 — 客户端声明 session_id（默认 default），键跨连接稳定，
+    持久化在键不在连接；文档锚 = 命名的工作身份
+  - commit 快照引入: 暂缓 — 独立快照流（stop/commit/tag/轮转）复杂度不匹配当下收益；
+    增量状态正向工作流 = 写进 Dockerfile（修正声明而非快照运行时）
+  - 自动 baseline commit 快照: 删除 — 标准镜像优先后创建时 env == 镜像，baseline :=
+    标准镜像引用（零拷贝），补偿链兜底 = 从镜像重建
+- 决策: ① session_id 客户端声明、跨连接稳定、TTL GC（P1）；② env 轴恢复 = wake 续用 +
+  标准镜像重建两档，commit 快照 P1 评估；baseline = 标准镜像引用；③ 进程句柄持久化
+  SQLite（P0-m2），容器停止句柄标 dead 不静默清理；④ 凭证 expired TTL 与任务时限同钟
+  （累计 running，不含睡眠；凭证次要优先级，P1 落地）
+- 影响: §3.1/§3.3/§4.1/§4.2/§7.0/§7.3/§10/AD-007 更新；P0 快照子系统收窄为
+  workdir 轴 + 镜像引用（更小施工面）
 - 日期: 2026-11-24
