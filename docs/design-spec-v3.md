@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.14 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层协议，ssh 瘦模式降 bootstrap）
+> 状态：v3.15 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式订阅，平台不向 Agent 脑内推消息）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -115,6 +115,7 @@ exec_async / process_list / process_logs / process_signal（进程手，P0-m3，
 revert（P0 = 标准镜像重建，见 §7.0；时点回滚随快照轴 P1）
 state_get() / state_put(doc)（记忆文档：单文档无键，MCP 直连，见 §4.1）
 status（本体感觉：聚合只读的身体事实，见 §4.3）
+events(after_seq)（身体事件流增量拉取：进程死亡/env 状态迁移/断线重连，audit 窄化视图，见 §4.4）
 env(capabilities)
 —— P1：policy_get / policy_set / policy_versions / policy_revert（网络策略落地随开）；
 snapshot / snapshot_list / snapshot_delete（workdir 快照轴，§7.1）
@@ -180,6 +181,28 @@ snapshot / snapshot_list / snapshot_delete（workdir 快照轴，§7.1）
 - 不做全局进程资源类型（AD-004 纪律）：句柄表 per-env 即可，出现跨 env 进程治理
   需求时再资源化
 - 端口暴露/预览（port_expose）：P1 记接缝，P0 不实现（单机形态暂无消费场景）
+
+### 4.4 身体事件流——拉模式订阅，平台不向 Agent 脑内推消息（v3.15，AD-017）
+
+**问题**：MCP 工具面原为纯拉（轮询 status/process_logs），Agent 对"进程死了/env 崩了/
+断线了"的感知延迟 = 轮询间隔，长任务需自起轮询循环。MCP 协议虽有 server → client
+notification 能力，但**客户端支持度参差**（推了可能无人收），且推送的接收方是 Agent
+的 context window——推 10 条通知 = 往上下文塞 10 条消息，打扰权应留在 Agent 手里。
+
+**决策：拉模式订阅（events 增量游标 + 长操作阻塞等待），零协议依赖**：
+
+| 机制 | 语义 | 已验证先例 |
+|---|---|---|
+| `events(after_seq)` | audit 流窄化视图（身体相关事件：进程死亡/env 状态迁移/断线重连），`after_seq` 增量拉取 = 游标订阅，一次调用拿到"自上次以来发生了什么" | audit_query（已设计）+ sandbox-mcp `audit_query`（已上线） |
+| `process_logs(wait=true)` | 阻塞至新输出/进程退出/超时——最朴素的"推送"，不依赖客户端实现任何 notification 处理 | sandbox-mcp `shell_exec(wait=)` 语义（已上线，反向使用） |
+
+- **不新增事件源**：events 读的就是 §6 审计流（P0 四类事件天然覆盖），只是给 Agent
+  一个窄化的增量读通道——审计是治理真相，events 是身体的感官回放
+- **与 MCP 原生 notification 的关系**：不使用。MCP resources/subscribe 生态未成熟，
+  推送打扰不可控；若未来客户端生态普遍支持且出现真实需求，再评估（与 §12 WebSocket
+  同一批）
+- **与"心智归 Agent"一致**：平台不往 Agent 脑内塞消息；Agent 决定何时看，一看即得
+  （感知权 = 拉模式；心智主权 = 不被打扰）
 
 ## 5. 权限与策略模型
 
@@ -778,4 +801,26 @@ P2 落地）；其余随 P1/P2 落地。
 - 影响: §1 分层补远端、§10.0 新增、Backend 契约加 health()；P1 路线图加伴生服务
   （第一个硬仗）；差异化定位：接入**用户已有机器**的远程身体（E2B/Daytona 的远程
   是平台托管沙箱，不接入既有主机——伴生架构是该赛道的独有路径）
+- 日期: 2026-11-24
+
+### AD-017: 身体事件流 = 拉模式订阅，不使用 MCP notification 推送（v3.15）
+
+- 状态: Accepted
+- 背景: 工具面原为纯拉，Agent 对进程死亡/env 崩溃/断线的感知延迟 = 轮询间隔。
+  MCP 协议有 server → client notification 能力（resources/subscribe 等），但其
+  客户端支持度参差（Claude Desktop 等处理不一，推了可能无人收）；且推送接收方
+  是 Agent 的 context window——推送 = 平台往 Agent 脑内塞消息，打扰不可控
+- 备选方案:
+  - MCP notification 推送: 拒绝 — 客户端生态未成熟（可靠性风险）+ 打扰权错位
+    （平台替 Agent 决定何时被打断，违反"心智归 Agent"）
+  - 纯轮询（维持现状）: 拒绝 — 长任务感知延迟大，Agent 要自建轮询循环烧上下文
+  - 拉模式订阅（events 游标 + 长操作阻塞等待）: 采纳 — 零协议依赖，两个机制都
+    有已上线先例（audit_query 游标、shell_exec(wait=)）
+- 决策: ① `events(after_seq)` 工具 = §6 审计流的窄化视图（身体相关事件），增量
+  游标 = 订阅；② `process_logs(wait=true)` 阻塞等待语义（新输出/进程退出/超时）；
+  ③ 不新增事件源（审计流复用）；MCP 原生 notification 与 WebSocket 同批留待
+  客户端生态成熟后评估
+- 影响: §4.4 新增、工具清单 +1（events）、process_logs 加 wait 参数；感知权 =
+  拉模式（Agent 决定何时看、一看即得），与 v3.14 断线五层的 L2 状态迁移闭环
+  （events 可增量消费状态迁移）
 - 日期: 2026-11-24
