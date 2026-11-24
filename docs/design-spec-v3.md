@@ -301,7 +301,7 @@ class Backend(ABC):
 |---|---|---|
 | P0-m1 ✅ | 资源模型 + backend 契约 + 快照/策略/审计骨架（纯契约，零死代码） | §2 §10 |
 | P0-m2 | SQLite 审计 sink + 内存注册表 + 状态机（含并发仲裁锁） | §3 §6 §13 |
-| P0-m3 | docker backend：create/exec/snapshot(commit)/restore + 两轴挂载 | §7 §10 |
+| P0-m3 | docker backend：create/exec/snapshot（标准镜像重建 + commit 备选）/restore + 两轴挂载 | §7 §10 |
 | P0-m4 | sandbox.yaml 配置装配 + MCP server（工具面按 P0 子集暴露） | §4 §13 |
 
 P1：策略资源化（网络边界）+ 凭证注入/回收 + 审计脱敏 + workdir 快照轴
