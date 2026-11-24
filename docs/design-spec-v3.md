@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.17 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式订阅）；v3.16 description 内嵌拉取指引；v3.17 响应捎带通知（piggyback：工具响应附带滞留事件，投递水位连接层维护）
+> 状态：v3.18 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式订阅）；v3.16 description 内嵌拉取指引；v3.17 响应捎带通知（piggyback）；v3.18 进程手收缩为 exec_async 单工具（观察干预归 shell，账本退化为一等数据）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -111,7 +111,7 @@ injected → active → recycled（任务结束）/ expired（超时兜底）
 
 resource_create / resource_inspect / resource_remove
 shell_* / file_*（capability 校验后路由到数据面）
-exec_async / process_list / process_logs / process_signal（进程手，P0-m3，见 §4.2）
+exec_async（非阻塞起后台进程 → 句柄；观察干预归 shell，见 §4.2）
 revert（P0 = 标准镜像重建，见 §7.0；时点回滚随快照轴 P1）
 state_get() / state_put(doc)（记忆文档：单文档无键，MCP 直连，见 §4.1）
 status（本体感觉：聚合只读的身体事实，见 §4.3）
@@ -169,13 +169,17 @@ snapshot / snapshot_list / snapshot_delete（workdir 快照轴，§7.1）
 - **唤醒降级链不失忆**：容器丢失走重建时，状态文档在平台侧 SQLite 键值存续——
   身体可以换，记忆不丢（比 v3.5 的 workdir 方案更早可用：先有感觉，再有身体）
 
-### 4.2 进程手（per-env 句柄，非全局资源类型）
+### 4.2 进程手（exec_async 单工具 + 隐形账本，v3.18 收缩）
 
-- `exec_async`：起后台进程，返回 `{pid, handle_id}`；进程注册在 per-env 句柄表，
-  **句柄持久化 SQLite（P0-m2）**——控制面重启句柄不丢，`process_logs` 游标可续
-- **容器停止 → 异步进程全灭**（stop/snapshot 链路同理）：句柄显式标 dead，不静默清理
-  （Agent 可见死亡事实，对齐自状态文档记忆）
-- `process_list / process_logs(尾部+游标) / process_signal`：观察与干预
+- `exec_async(cmd)`：非阻塞起后台进程，返回 `{pid, handle_id}`——不占 shell 会话
+- **句柄账本是数据不是工具**：进程注册进 per-env 句柄表并**持久化 SQLite（P0-m2）**，
+  控制面重启不丢；死亡/状态变化走响应捎带（§4.4）与 status 进程存活字段送达——
+  平台记账（事实），Agent 读账走 status/捎带，**无专门读账工具**
+- ~~process_list / process_logs / process_signal~~（v3.18 砍，AD-020）：观察干预归
+  shell（tail/ps/kill）——userland 命令是 Agent 与生俱来的手，平台不重复造；
+  "我起了什么"是记忆问题归 state doc，跨机聚合真需求出现时 status 扩字段
+- **容器停止 → 异步进程全灭**（stop/revert 链路同理）：句柄显式标 dead，不静默清理
+  （死亡事实经捎带送达，对齐自状态文档记忆）
 - **平台不复活进程**（诚实条款）：容器停止 = 进程消亡；进程复活 = 重建应用状态，
   复杂且易腐——"该重启哪些进程"由 Agent 依自状态文档决定，平台只保证身体持久性
 - 不做全局进程资源类型（AD-004 纪律）：句柄表 per-env 即可，出现跨 env 进程治理
@@ -194,7 +198,6 @@ notification 能力，但**客户端支持度参差**（推了可能无人收）
 | 机制 | 语义 | 已验证先例 |
 |---|---|---|
 | `events(after_seq)` | audit 流窄化视图（身体相关事件：进程死亡/env 状态迁移/断线重连），`after_seq` 增量拉取 = 游标订阅，一次调用拿到"自上次以来发生了什么" | audit_query（已设计）+ sandbox-mcp `audit_query`（已上线） |
-| `process_logs(wait=true)` | 阻塞至新输出/进程退出/超时——最朴素的"推送"，不依赖客户端实现任何 notification 处理 | sandbox-mcp `shell_exec(wait=)` 语义（已上线，反向使用） |
 
 - **不新增事件源**：events 读的就是 §6 审计流（P0 四类事件天然覆盖），只是给 Agent
   一个窄化的增量读通道——审计是治理真相，events 是身体的感官回放
@@ -210,9 +213,8 @@ Claude Desktop）后确认：唯一被普遍消费的通知通道是 `tools/list
 **100% 可达面**：工具 description 必然注入模型上下文——把拉取习惯写进状态敏感工具
 的 description，等于把"订阅"编码进 Agent 的本能，零基础设施、全客户端一致。
 
-- **只写状态敏感工具**（不烧不必要的 token）：`process_logs` / `process_signal`
-  （进程可能已死）、`shell_*` / `file_*`（machine 可能断线）、`state_get`（唤醒后
-  第一个调用，配对 events）
+- **只写状态敏感工具**（不烧不必要的 token）：`shell_*` / `file_*`（machine 可能
+  断线）、`state_get`（唤醒后第一个调用，配对 events）
 - **description 模板**（一行，中英随实现）：`Before operating, check events(after_seq)
   for body changes since your last check (process death, disconnection, state
   transitions).`
@@ -911,4 +913,29 @@ P2 落地）；其余随 P1/P2 落地。
 - 影响: §4.4 捎带小节；P0-m4 MCP server 实现时在工具响应组装层统一注入（单点
   实现，非逐工具）；感知栈四通道合成：捎带（必然即时）→ wait 阻塞 → events 回看
   → description 习惯——感知可靠性不再依赖任何单一通道
+- 日期: 2026-11-24
+
+### AD-020: 进程手收缩为 exec_async 单工具——观察干预归 shell（v3.18）
+
+- 状态: Accepted
+- 背景: 连环质疑拆解 process_*：① `ps`/`tail`/`kill` 是 shell 现成命令，包装它们
+  = 冗余工具烧 schema；② `process_logs(wait=true)` 的"等待期间保持可操控"是
+  错觉——MCP 工具调用同步，wait 挂起期间 Agent 同样冻结，与阻塞执行无异（唯一
+  剩余差异"结构化结局"价值不足以撑独立语义）；③ process_list 的账本视图价值
+  （"我起了什么、活着吗"）可由 exec_async 返回值 + 捎带死亡事件 + status 进程
+  存活字段覆盖；"我起了什么"本质是记忆问题，归 state doc（AD-008 唤醒闭环）
+- 备选方案:
+  - 保留三工具 + 砍 wait 参数: 部分 — list/logs 仍与 shell 冗余
+  - 收缩为 exec_async + process_list 两工具: 不彻底 — list 的读账场景已被
+    捎带+status 覆盖
+  - exec_async 单工具，账本退化为一等数据: 采纳 — 平台记账（事实），读账走
+    status/捎带，无专门读账工具
+- 决策: process_list/process_logs/process_signal 全砍；exec_async 保留（核心价值
+  = 非阻塞地起，不占 shell 会话）；句柄持久化 SQLite 保留；死亡事实走捎带通知；
+  观察干预归 shell（tail/ps/kill——userland 命令是 Agent 与生俱来的手）；跨机
+  聚合真需求出现时 status 扩字段而非恢复工具
+- 影响: §4.2 收缩、工具清单 P0 面 11→8（resource×3 + shell/file + exec_async +
+  revert + state×2 + status + events + env）；§4.4 感知栈 wait 通道移除（三通道：
+  捎带→events→description）；AD-017/018/019 的 process_logs 表述作废；
+  判决标准沉淀：**平台只造 shell 做不到的原语，shell 能做的一律不造**
 - 日期: 2026-11-24
