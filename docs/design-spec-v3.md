@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.5 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先、commit 备选）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）
+> 状态：v3.6 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先、commit 备选）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归 session 本体（MCP 直连，记手的状态而非 workdir 状态）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -85,7 +85,7 @@ created → starting → running → stopping → stopped → removing → remov
   保留，文件系统原样）；wake = start **续用**（非重建，进程不复活）——比 env revert
   （重建）便宜的日常续用通道。恢复阶梯：wake（续用）< revert-from-commit < 标准镜像重建
 - **唤醒失败降级链**：容器丢失（宿主重启/docker prune）→ wake 报错 → 自动走重建链
-  （标准镜像/baseline + workdir 重挂 + 自状态文档仍在，见 §4.1——降级不失忆）
+  （标准镜像/baseline + workdir 重挂 + 自状态文档仍在（MCP 直连，见 §4.1）——降级不失忆）
 - 策略时限默认仅计 running（睡眠不烧执行时长，占磁盘；磁盘配额 P1）
 - 无 update：改镜像/限额 = 重建（不可变基础设施）
 - **并发仲裁（P0 必需）**：每个 exec_env 持有编排层互斥锁——同一时刻只允许一个生命周期
@@ -110,20 +110,27 @@ snapshot / revert / snapshot_list / snapshot_delete（均带 scope: env|workdir|
 audit_query / metrics / env(capabilities)
 shell_* / file_*（capability 校验后路由到数据面）
 exec_async / process_list / process_logs / process_signal（进程手，P0-m3，见 §4.2）
+state_get / state_put（自状态文档，MCP 直连，见 §4.1）
 
 ### 4.1 自状态文档（Agent 的本体感觉，AD-008）
 
-约定路径：workdir 内 `.agent/STATE.md`——搭 workdir 轴的便车，零新机制：
-睡眠不丢、env revert 不丢（workdir 是资产轴）、restore 只回到指定时点。
+**记录的是手的状态，不是 workdir 的状态**。workdir 是 Agent 随时切换、可多开的视角
+（对人：打开一个文件夹就是一个 workdir；对 Agent 同理）——不是本体的锚点。状态文档
+属于 **Agent session 本体**，记录其**握持的手 = 当前连接的机器/容器集合**（在此容器
+跑测试、在那台远程机部署……）。
 
-- **播种**：env create 时平台写入一次"身体事实"头部（resource_id / backend / 网络位置
-  内网|外网 / 可用 capability / workdir 挂载路径），此后**平台永不改写**
-- **维护**：Agent 自己读、自己写——记当前任务上下文、哪些进程应该在跑、下一步计划；
-  这是唤醒后自我定位的依据（wake → 读 STATE.md → 重启所需进程 → 继续干活）
+载体：**MCP 直连**（`state_get` / `state_put`），平台侧持久化（SQLite，随 session）。
+不落 workdir——workdir 换了文档不换；wake 一发生即可读，无需等 workdir 重挂。
+
+- **播种**：session 首次接入时平台写入"身体事实"头部（tenant/session 标识、当前握持
+  的 env 清单及各自 backend / 网络位置 内网|外网 / 可用 capability），此后**平台永不
+  改写**；握持清单可由 Agent 显式请求平台代刷新（snapshot of governance facts）
+- **维护**：Agent 自己读、自己写——记任务上下文、哪些进程应该在跑、下一步计划；
+  这是唤醒后自我定位的依据（wake → state_get → 重启所需进程 → 继续干活）
 - **边界：自叙记忆 ≠ 治理真相**。文档可以记错、可以过时；治理真相在审计事件流与
   `env/inspect` 实时查询。平台不校验文档内容（否则它就成了第二个需要审计的对象）
-- **唤醒降级链不失忆**：容器丢失走重建时，workdir（含 STATE.md）原样重挂——
-  身体可以换，记忆不丢
+- **唤醒降级链不失忆**：容器丢失走重建时，状态文档在平台侧随 session 存续——
+  身体可以换，记忆不丢（比 v3.5 的 workdir 方案更早可用：先有感觉，再有身体）
 
 ### 4.2 进程手（per-env 句柄，非全局资源类型）
 
@@ -471,9 +478,10 @@ P0 阶段只强制前 6 条（revert/放行/不可变/凭证/冷启动/exec）�
   - 身体归平台、心智归 Agent: 采纳 — 平台保证持久性与事实（stop 保留可写层、播种
     身体事实头部），Agent 决定进程、睡眠、记忆
 - 决策: ① 进程手（exec_async/process_*，per-env 句柄，平台不复活进程）；② 自状态文档
-  `.agent/STATE.md`（workdir 内，平台播种一次、永不改写，自叙记忆 ≠ 治理真相）；
-  ③ 睡眠/唤醒 Agent 自主（wake = start 续用，恢复阶梯最便宜档；失败自动降级重建，
-  workdir 重挂不失忆）
+  （MCP 直连 state_get/state_put，平台侧随 session 持久化；记**手的状态**——Agent 握持的
+  机器/容器集合，非 workdir 状态；平台播种一次、永不改写，自叙记忆 ≠ 治理真相；
+  v3.6 修订：原 workdir 载体方案作废——workdir 是可切换多开的视角，不是本体锚点）；
+  ③ 睡眠/唤醒 Agent 自主（wake = start 续用，恢复阶梯最便宜档；失败自动降级重建）
 - 影响: §3.1（sleep/wake + 降级链）、§4.1/§4.2 新增、NFR-9/10（赋能度量）；
-  唤醒闭环 = wake → 读 STATE.md → 重启进程 → 继续干活；策略时限默认仅计 running
+  唤醒闭环 = wake → state_get → 重启进程 → 继续干活；策略时限默认仅计 running
 - 日期: 2026-11-24
