@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.4 — 2026-11-23，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先、commit 备选）
+> 状态：v3.5 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先、commit 备选）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -25,6 +25,8 @@
 - **手**：capability —— 操作原语，每只手诚实声明它能做什么（容器有 shell、物理机无快照）
 - **恢复与安全是次优先级**：本质是为更好更安全地操作、**防止自我崩溃**（自愈），
   不是为了隔离/防御——那属于"沙箱"框架的命题，不是本项目的
+- **心智归 Agent（AD-008）**：进程管理、睡眠/唤醒、自状态文档由 Agent 自主决定——
+  平台只管身体的持久性与事实，不替 Agent 记忆、不替 Agent 决策
 
 > 与"沙箱"的关系：传统 sandbox = 拦截、限制（笼子，防外敌）。本项目不用这个框架——
 > 身体框架下，Agent 是**主体**而非威胁，安全命题是"自愈"而非"防御"。
@@ -79,6 +81,12 @@ created → starting → running → stopping → stopped → removing → remov
 ```
 - 迁移幂等（重复调用同状态）
 - 超时驱动：starting 30s / stopping 60s
+- **睡眠/唤醒由 Agent 自主决定（AD-008）**：sleep = graceful stop（stopped，容器可写层
+  保留，文件系统原样）；wake = start **续用**（非重建，进程不复活）——比 env revert
+  （重建）便宜的日常续用通道。恢复阶梯：wake（续用）< revert-from-commit < 标准镜像重建
+- **唤醒失败降级链**：容器丢失（宿主重启/docker prune）→ wake 报错 → 自动走重建链
+  （标准镜像/baseline + workdir 重挂 + 自状态文档仍在，见 §4.1——降级不失忆）
+- 策略时限默认仅计 running（睡眠不烧执行时长，占磁盘；磁盘配额 P1）
 - 无 update：改镜像/限额 = 重建（不可变基础设施）
 - **并发仲裁（P0 必需）**：每个 exec_env 持有编排层互斥锁——同一时刻只允许一个生命周期
   迁移或 revert 在途；第二个操作立即拒绝（409 conflict，非排队）。revert 内部五步视为
@@ -101,6 +109,31 @@ credential_inject / credential_recycle（无 read）
 snapshot / revert / snapshot_list / snapshot_delete（均带 scope: env|workdir|full 参数，默认 env）
 audit_query / metrics / env(capabilities)
 shell_* / file_*（capability 校验后路由到数据面）
+exec_async / process_list / process_logs / process_signal（进程手，P0-m3，见 §4.2）
+
+### 4.1 自状态文档（Agent 的本体感觉，AD-008）
+
+约定路径：workdir 内 `.agent/STATE.md`——搭 workdir 轴的便车，零新机制：
+睡眠不丢、env revert 不丢（workdir 是资产轴）、restore 只回到指定时点。
+
+- **播种**：env create 时平台写入一次"身体事实"头部（resource_id / backend / 网络位置
+  内网|外网 / 可用 capability / workdir 挂载路径），此后**平台永不改写**
+- **维护**：Agent 自己读、自己写——记当前任务上下文、哪些进程应该在跑、下一步计划；
+  这是唤醒后自我定位的依据（wake → 读 STATE.md → 重启所需进程 → 继续干活）
+- **边界：自叙记忆 ≠ 治理真相**。文档可以记错、可以过时；治理真相在审计事件流与
+  `env/inspect` 实时查询。平台不校验文档内容（否则它就成了第二个需要审计的对象）
+- **唤醒降级链不失忆**：容器丢失走重建时，workdir（含 STATE.md）原样重挂——
+  身体可以换，记忆不丢
+
+### 4.2 进程手（per-env 句柄，非全局资源类型）
+
+- `exec_async`：起后台进程，返回 `{pid, handle_id}`；进程注册在 per-env 句柄表
+- `process_list / process_logs(尾部+游标) / process_signal`：观察与干预
+- **平台不复活进程**（诚实条款）：容器停止 = 进程消亡；进程复活 = 重建应用状态，
+  复杂且易腐——"该重启哪些进程"由 Agent 依自状态文档决定，平台只保证身体持久性
+- 不做全局进程资源类型（AD-004 纪律）：句柄表 per-env 即可，出现跨 env 进程治理
+  需求时再资源化
+- 端口暴露/预览（port_expose）：P1 记接缝，P0 不实现（单机形态暂无消费场景）
 
 ## 5. 权限与策略模型
 
@@ -327,8 +360,10 @@ P2：三层身份 + metrics + vm/k8s backend 评估
 | NFR-6 | 凭证最小暴露 | credential_read 工具数 | = 0（结构性禁用） | 工具面审计 |
 | NFR-7 | 审计 = 复盘 | 事件可回溯率 | = 100%（脱敏后） | audit Query 覆盖 |
 | NFR-8 | 配额 = 保活 | 单任务超限不影响其他任务 | 无饥饿（P1 验证） | 配额测试 |
+| NFR-9 | 赋能操作 | env 冷启动延迟（create→running） | p95 < 10s（标准镜像有缓存） | create 流程计时 |
+| NFR-10 | 赋能操作 | exec 往返延迟（同步 shell） | p95 < 500ms | exec 计时 |
 
-P0 阶段只强制前 4 条（revert/放行/不可变/凭证）；后 4 条随 P1/P2 落地。
+P0 阶段只强制前 6 条（revert/放行/不可变/凭证/冷启动/exec）；后 4 条随 P1/P2 落地。
 
 ---
 
@@ -421,3 +456,24 @@ P0 阶段只强制前 4 条（revert/放行/不可变/凭证）；后 4 条随 P
 - 影响: §7.0/§7.3/§10 更新；恢复的正确性优先于速度；与"执行环境不可变"哲学一致
   （声明式真相在 Dockerfile，commit 是运行时增量的逃生舱）
 - 日期: 2026-11-23
+
+### AD-008: 身体自治——心智归 Agent（进程/睡眠/自状态文档）
+
+- 状态: Accepted
+- 背景: 赋能操作（AD-006）推出后暴露三个旧框架缺口：无后台进程语义、无睡眠/唤醒
+  续用通道、Agent 唤醒后无处自我定位。三者共同指向一个原则切面：平台越界替 Agent
+  记忆与决策
+- 备选方案:
+  - 平台管进程守护/自动重启: 拒绝 — 平台不知道"该跑什么"（应用语义），复活进程 =
+    重建应用状态，复杂易腐；越俎代庖
+  - 平台维护状态文档: 拒绝 — 文档须承载 Agent 的主观任务上下文，平台只能写客观事实；
+    平台维护则文档成治理对象，需要配套审计，成本倒挂
+  - 身体归平台、心智归 Agent: 采纳 — 平台保证持久性与事实（stop 保留可写层、播种
+    身体事实头部），Agent 决定进程、睡眠、记忆
+- 决策: ① 进程手（exec_async/process_*，per-env 句柄，平台不复活进程）；② 自状态文档
+  `.agent/STATE.md`（workdir 内，平台播种一次、永不改写，自叙记忆 ≠ 治理真相）；
+  ③ 睡眠/唤醒 Agent 自主（wake = start 续用，恢复阶梯最便宜档；失败自动降级重建，
+  workdir 重挂不失忆）
+- 影响: §3.1（sleep/wake + 降级链）、§4.1/§4.2 新增、NFR-9/10（赋能度量）；
+  唤醒闭环 = wake → 读 STATE.md → 重启进程 → 继续干活；策略时限默认仅计 running
+- 日期: 2026-11-24
