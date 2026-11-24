@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.11 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清（userland 数据，NFR-5 范围收窄为平台通道）
+> 状态：v3.12 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留（P0 唯一认证 = MCP 入口门锁）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -109,7 +109,7 @@ injected → active → recycled（任务结束）/ expired（超时兜底）
 
 resource_create / resource_inspect / resource_remove
 policy_get / policy_set / policy_versions / policy_revert
-credential_inject / credential_recycle（无 read）
+credential_inject / credential_recycle（无 read）（P2 预留，见 §9）
 snapshot / revert / snapshot_list / snapshot_delete（均带 scope: env|workdir|full 参数，默认 env）
 audit_query / metrics / env(capabilities)
 shell_* / file_*（capability 校验后路由到数据面）
@@ -287,11 +287,17 @@ docker 沙箱同理（外部交互占比小而已）。
 时限（任务最大时长）
 全部走版本化恢复通道
 
-## 9. 凭证子系统
+## 9. 凭证子系统（P2 预留，P0 无消费者）
+
+> v3.12 降级：逐层拆解后 P0/P1 无真实消费者——快照隔离的触发条件是**快照出境**
+> （导出/跨机迁移/平台流转，P2）；无 read 的消费者是不信任 Agent 的多租户（P2）；
+> recycle/expired 的消费者是长期任务轮换（P1尾~P2）。资源类型与状态常量保留
+> （§2.2/§3.3），本节语义全部留档，代码随第一个真实消费者引入（AD-004）。
 
 inject：读取 secret 源 → 注入环境 → 记录元数据（值脱敏）
 recycle：清除环境变量 → 撤销 token → 状态 recycled
-快照交互：snapshot 前自动 detach 凭证；恢复后重新 inject
+快照隔离（出境检疫）：快照离开平台边界（导出/迁移）前 detach 凭证，恢复后 re-inject
+——本地快照不出境，无需检疫
 边界：credential_read 结构上不存在
 
 **Agent 自建凭证（v3.11 澄清）**：Agent 在环境内自己获取/创建的凭证
@@ -305,10 +311,15 @@ recycle：清除环境变量 → 撤销 token → 状态 recycled
 | 跨 env 重建存活 | workdir（资产轴） | env revert 不丢，与代码同为资产 |
 | 记住存在（非值） | 记忆文档记元数据（路径/用途/过期） | 秘密卫生条款覆盖 |
 
-上交通道（P1 评估）：credential 资源已有 C/D（§2.2），可定义
+上交通道（P2 评估）：credential 资源已有 C/D（§2.2），可定义
 `credential_register(value)` 让 Agent 把自建凭证上交平台通道，换取 recycle/
 防泄漏兜底——语义预留不预建（AD-004）。平台不扫描 userland 内容来拦截自建
 凭证（内容治理越界）；NFR-5 的承诺范围相应收窄为平台通道（见 §15）。
+
+**MCP 入口认证（≠ 凭证子系统）**：凭证子系统是"Agent 用钥匙开环境的锁"，
+入口认证是"谁的客户端能连上 sandboxd"——门锁不属于钥匙柜。P0 单机：unix socket
+本机监听 = 天然门禁（无需 token）；HTTP 监听时要求 static token（sandbox.yaml
+配置）。多租户认证是 P2 治理身份（§11）的范畴。
 
 ## 10. 数据面（Backend 契约）
 
@@ -362,7 +373,9 @@ class Backend(ABC):
 
 ## 13. 部署形态
 
-单进程 MCP server（stdio/HTTP）+ sandbox.yaml 配置 + SQLite（审计/注册表）+ 文件系统（快照/工作目录存储）
+单进程 MCP server（stdio/unix socket/HTTP）+ sandbox.yaml 配置 + SQLite（审计/注册表/记忆/句柄）+ 文件系统（快照/工作目录存储）
+
+入口认证（门锁，见 §9）：stdio/unix socket = 本机天然门禁；HTTP = static token（sandbox.yaml）。多租户认证 P2。
 
 ## 14. 开源核心与平台层边界
 
@@ -406,7 +419,7 @@ class Backend(ABC):
 | P0-m3 | docker backend：create/exec/snapshot（标准镜像重建，commit P1 评估）/restore + 两轴挂载 | §7 §10 |
 | P0-m4 | sandbox.yaml 配置装配 + MCP server（工具面按 P0 子集暴露） | §4 §13 |
 
-P1：策略资源化（网络边界）+ 凭证注入/回收 + 审计脱敏 + workdir 快照轴
+P1：策略资源化（网络边界）+ 审计脱敏 + workdir 快照轴 + commit 快照评估
 P2：三层身份 + metrics + vm/k8s backend 评估
 
 验证矩阵（`docs/verification/feature-test-matrix.md`）在 P0-m3 首个可运行 backend
@@ -432,7 +445,8 @@ P2：三层身份 + metrics + vm/k8s backend 评估
 | NFR-9 | 赋能操作 | env 冷启动延迟（create→running） | p95 < 10s（标准镜像有缓存） | create 流程计时 |
 | NFR-10 | 赋能操作 | exec 往返延迟（同步 shell） | p95 < 500ms | exec 计时 |
 
-P0 阶段只强制前 6 条（revert/放行/不可变/凭证/冷启动/exec）；后 4 条随 P1/P2 落地。
+P0 阶段只强制前 6 条中可测的（revert/放行/不可变/冷启动/exec——凭证条随子系统
+P2 落地）；其余随 P1/P2 落地。
 
 ---
 
@@ -640,4 +654,24 @@ P0 阶段只强制前 6 条（revert/放行/不可变/凭证/冷启动/exec）�
   （语义预留不预建）；NFR-5 范围收窄为"平台通道快照"，诚实声明承诺边界
 - 影响: §9 新增澄清节、NFR-5 措辞；平台保证边界从此对称：**保证自己经手的，
   不保证自己看不见的**——这是诚实条款而非安全放松（扫描的漏报才是虚假安全）
+- 日期: 2026-11-24
+
+### AD-014: 凭证子系统降级 P2 预留——P0 唯一认证是 MCP 入口门锁（v3.12）
+
+- 状态: Accepted
+- 背景: 连续追问拆完了凭证的存在理由：快照隔离的触发条件是快照**出境**（P2）；
+  无 read 的消费者是多租户不信任场景（P2）；recycle/expired 是长期任务轮换（P1尾
+  ~P2）；审计脱敏是审计的功能而非凭证的。P0/P1 全程无真实消费者。且需区分两类
+  概念：凭证子系统 = Agent 用钥匙开环境的锁；MCP 入口认证 = 谁能连上 sandboxd
+  的门锁——门锁不属于钥匙柜
+- 备选方案:
+  - 凭证子系统保留 P1: 拒绝 — 无消费者即施工（违反 AD-004）
+  - 整节删除: 拒绝 — NFR-5/6 与 §3.3 状态机需要主体；语义留档成本低
+  - 降级 P2 预留 + 入口认证独立: 采纳
+- 决策: §9 降级为 P2 预留（资源类型/状态常量/本节语义全部留档，代码随第一个
+  真实消费者引入）；credential_inject/recycle 工具标 P2；P0 入口认证 = unix
+  socket 天然门禁（HTTP 监听时 static token）；detach/re-inject 语义修正触发
+  条件为"快照出境检疫"（本地快照无需）
+- 影响: §9/§4/§13/P1 清单/NFR 分期更新；P0 施工面进一步收窄（凭证子系统完全
+  出局）；AD-013 的"平台通道"承诺顺延至 P2 兑现
 - 日期: 2026-11-24
