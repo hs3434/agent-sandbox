@@ -18,6 +18,15 @@ import (
 type remoteMachine struct {
 	be   *remote.Backend
 	name string
+	axis string // the axis this target lives on (P0: ssh)
+}
+
+// Axis names the deployed axis (status groups machines by axis).
+func (m remoteMachine) Axis() string {
+	if m.axis == "" {
+		return "ssh"
+	}
+	return m.axis
 }
 
 func (m remoteMachine) Exec(ctx context.Context, id resource.ResourceID, cmd string, opts ...container.ExecOptions) (container.ExecResult, error) {

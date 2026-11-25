@@ -367,9 +367,9 @@ func TestStatusShapeAndContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	envs, ok := st["envs"].(map[string]any)
+	envs, ok := st["docker"].(map[string]any)
 	if !ok {
-		t.Fatalf("envs must be a name-keyed map, got %T", st["envs"])
+		t.Fatalf("docker must be a name-keyed map, got %T", st["docker"])
 	}
 	if len(envs) != 2 {
 		t.Fatalf("envs = %d entries, want 2", len(envs))
@@ -402,8 +402,12 @@ func TestStatusShapeAndContent(t *testing.T) {
 	if _, ok := envs[def]; !ok {
 		t.Fatalf("default %q must exist in envs", def)
 	}
-	// machines is a collection too (empty here — no declared machines)
-	if _, ok := st["machines"].(map[string]any); !ok {
-		t.Fatalf("machines must be a name-keyed map, got %T", st["machines"])
+	// ssh is a collection too (empty here — no declared machines); the key
+	// names the deployed axis, not an abstract category
+	if _, ok := st["ssh"].(map[string]any); !ok {
+		t.Fatalf("ssh must be a name-keyed map, got %T", st["ssh"])
+	}
+	if _, ok := st["envs"]; ok {
+		t.Fatal("payload must name the deployed axis (docker), not the abstract category")
 	}
 }

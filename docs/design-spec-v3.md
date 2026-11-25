@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.26 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）；v3.26 status 结构分层：集合用按名键控 map、`default` 是指针不是同级清单、网络地址入面（env 的 IP/DNS + machine 的 host:port）、machine 状态取真值（不再写死 connected）（AD-031）
+> 状态：v3.27 — 2026-11-25，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）；v3.26 status 结构分层：集合用按名键控 map、`default` 是指针不是同级清单、网络地址入面（env 的 IP/DNS + machine 的 host:port）、machine 状态取真值（不再写死 connected）（AD-031）；v3.27 载荷按轴命名：status 用 `docker` / `ssh` 键（部署轴）而非抽象类目 `envs` / `machines`，配置侧机器声明加 `kind`（默认 ssh）（AD-032）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -220,12 +220,18 @@ Agent 自建凭证（userland，AD-013），平台审计不承诺脱敏
 
 ```
 {
-  "envs":    { "<name>": { id, status, backend, image, workdir, created, tags?, network{name,ip,dns} } },
-  "machines":{ "<name>": { state, address, os } },
-  "default": "<name>",          // 指针：envs 里某一项的名字，不是第三张清单
+  "docker":  { "<name>": { id, status, backend, image, workdir, created, tags?, network{name,ip,dns} } },
+  "ssh":     { "<name>": { state, address, os } },
+  "default": "<name>",          // 指针：docker 里某一项的名字，不是第三张清单
   "_events": [ ... ]            // 捎带（游标去重）
 }
 ```
+
+- **键 = 部署轴**（v3.27，AD-032）：载荷报的是**这台实例实际部署了什么轴**，
+  不是抽象类目——`docker` 是 docker 身体，`ssh` 是可达的 ssh 目标；将来 k8s/vm
+  轴落地时各加自己的键（`k8s: {...}`），而不是把 docker/ssh 撑成杂物袋。
+  配置侧保持声明的通用性（`machines:` + `kind:`，默认 ssh）——k8s 集群也是 machine，
+  只是另一个轴
 
 - **集合 = 按名键控 map**：envs / machines 各自的键就是资产地址（名字）——Agent 按名
   直取，不必扫数组；类型上（object）即与 `default`（标量指针）区分开，不再是"三张
@@ -1466,4 +1472,30 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   波浪号展开导致 key 读不到的真 bug（exec 走 ssh 二进制自带展开，故只有 SFTP
   中招）；④ P1 当 env 可落在远端 backend 上时，machine 状态应下沉挂到 env 行
   （env.backend/env.target），顶层 machines 退化为端点目录
+- 日期: 2026-11-25
+
+### AD-032: 载荷按轴命名——docker / ssh，而非 envs / machines（v3.27）
+
+- 状态: Accepted
+- 背景: v3.26 把 status 分成"集合 + 指针"，但集合的**键名**仍是抽象类目
+  （`envs` / `machines`）。用户裁示："env 应该叫 docker 才比较合适吧？machines
+  改成 ssh"——理由是这两个集合**不是抽象概念，而是本实例实际部署的两条轴**
+  （§13.2 双轴矩阵：docker×linux / ssh×linux / ssh×windows）：`envs` 里装的就
+  是 docker 容器（backend 字段恒为 docker），`machines` 里装的就全是 ssh 目标。
+  用抽象词命名，反而遮蔽了"这台实例到底有什么"。
+- 备选方案:
+  - 保持 envs/machines: 拒绝 — 抽象词遮蔽实况；且 docker 身体与 ssh 目标
+    混在两个同构 map 里，读者仍要靠字段猜哪个轴
+  - 改成 containers / hosts: 拒绝 — 又是抽象类目，换了个词而已
+  - **按轴命名（docker / ssh），新轴各加一键: 采纳** — 键即轴，载荷自解释；
+    扩展时是"加键"而非"改键"
+  - 配置侧也改成 ssh: 拒绝 — k8s 集群同样是 machine（配置声明保持通用：
+    `machines:` + `kind:`，默认 ssh）
+- 决策: §4.3 载荷键 = 部署轴（docker / ssh；P0 恒有这两键，ssh 无机器时为空
+  map）；配置 `machines:` 条目加 `kind` 字段（默认 ssh）作为轴声明
+- 影响: ① status 载荷 = {docker, ssh, default, _events}；② machine 按 kind 分组
+  进对应轴的 map；③ 工具参数 `machine` 保持不变（它是**选择器**语义：选一个已
+  声明的远程目标 = status.ssh 的键；P1 加别的轴时该参数泛化为 target）
+  ——注意这与 AD-027"工具名不焊 backend"并不矛盾：工具名按**被操作物**命名
+  （container_*），载荷键按**部署轴**报告，两者各司其职
 - 日期: 2026-11-25

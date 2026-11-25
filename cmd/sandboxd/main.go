@@ -77,7 +77,7 @@ func main() {
 			if err := remoteBe.Connect(t); err != nil {
 				log.Printf("machine %q connect failed (will retry lazily): %v", name, err)
 			}
-			namedBackends[name] = remoteMachine{be: remoteBe, name: name}
+			namedBackends[name] = remoteMachine{be: remoteBe, name: name, axis: m.Axis()}
 		}
 	}
 

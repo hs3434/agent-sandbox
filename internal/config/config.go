@@ -24,13 +24,24 @@ type Docker struct {
 }
 
 // Target mirrors remote.Target for YAML declaration (AD-026: registration is
-// declarative, zero tools).
+// declarative, zero tools). Kind names the axis the target lives on — P0 is
+// "ssh"; a k8s cluster is also a machine, but a different axis (the status
+// payload reports axes: docker / ssh / ...).
 type Target struct {
+	Kind   string `yaml:"kind,omitempty"` // default: ssh
 	Host   string `yaml:"host"`
 	Port   int    `yaml:"port,omitempty"`
 	User   string `yaml:"user,omitempty"`
 	Key    string `yaml:"key,omitempty"`
 	OSType string `yaml:"os_type"`
+}
+
+// Axis returns the target's axis name (default "ssh").
+func (t Target) Axis() string {
+	if t.Kind == "" {
+		return "ssh"
+	}
+	return t.Kind
 }
 
 // Limits are the user-configurable overrides (contract defaults live in the

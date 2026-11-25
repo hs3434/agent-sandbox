@@ -249,25 +249,46 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 		envs[name] = row
 	}
 
-	machines := map[string]any{}
+	// machines are grouped by axis: the payload names the deployed axes
+	// (docker / ssh / ...), not an abstract category.
+	axes := map[string]map[string]any{}
 	for name, be := range o.backends {
 		row := map[string]any{}
 		if h, ok := be.(interface{ Health() string }); ok {
 			row["state"] = h.Health()
+		}
+		axis := "ssh"
+		if k, ok := be.(interface{ Axis() string }); ok {
+			axis = k.Axis()
 		}
 		if t, ok := be.(interface{ TargetInfo() (string, string) }); ok {
 			addr, osType := t.TargetInfo()
 			row["address"] = addr
 			row["os"] = osType
 		}
-		machines[name] = row
+		if axes[axis] == nil {
+			axes[axis] = map[string]any{}
+		}
+		axes[axis][name] = row
 	}
 
-	return map[string]any{
-		"envs":    envs,      // collection: body name → body facts
-		"machines": machines, // collection: machine name → reachability facts
-		"default": o.defaultEnv(), // pointer: the name of one env (the workbench)
-	}, nil
+	// Payload names the deployed axes, not abstract categories (§13.2
+	// matrix): "docker" = the docker bodies this instance runs, "ssh" = the
+	// ssh targets it can reach. A future axis (k8s/vm) adds its own key
+	// instead of overloading these.
+	out := map[string]any{
+		"docker":  envs, // collection: body name → body facts
+		"default": o.defaultEnv(), // pointer: the name of one body (the workbench)
+	}
+	// axis collections: "ssh" always present in P0 (stable schema), a future
+	// axis (k8s/vm) adds its own key when it exists.
+	for axis, rows := range axes {
+		out[axis] = rows
+	}
+	if _, ok := out["ssh"]; !ok {
+		out["ssh"] = map[string]any{}
+	}
+	return out, nil
 }
 
 // WorkdirFor exposes the invariant (tool responses tell the agent where files live).

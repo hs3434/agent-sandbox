@@ -11,8 +11,11 @@ docker:
   containerized: false
 
 # 机器注册 = 声明式（AD-026：零工具）。ssh 瘦模式 = 阻塞 exec + file_*（SFTP）。
+# kind = 该目标所在的部署轴（默认 ssh；k8s 集群也是 machine，但属另一轴）。
+# status 按轴报告：docker 键 = docker 身体，ssh 键 = ssh 目标。
 machines:
   # build-box:
+  #   kind: ssh
   #   host: 10.0.0.21
   #   port: 22
   #   user: builder
