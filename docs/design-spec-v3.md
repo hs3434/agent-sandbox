@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.22 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销
+> 状态：v3.23 — 2026-11-25，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -563,12 +563,49 @@ class Backend(ABC):
 | **编码适配（代码页探测/GBK）** | ✅ **直接抄** | Python 版已有（encoding_utils + powershell_provider 语义）——代码债便宜就还 |
 | **原子写 + UTF-8 LF no BOM 归一化 + 敏感路径警告** | ✅ **直接抄** | file_operations.py + safety.py 语义——纯函数孤立易移植，docker/ssh 两 backend 通用 |
 | **sudo 提权** | ✅ 管道模式 | `echo PW \| sudo -S`（§4.0.1）——非交互，不依赖 PTY 答 prompt（Python 版也从未解决它） |
+| **连接自愈（ControlMaster 语义 + 往返探测）** | ✅ 直接抄 + 加固 | Python 版 ControlMaster 三件套（见 §10.0.1）；Go 加固：往返探测防僵尸 master——比 Python 版的 `-O check` 多一步诚实 |
 | async=true | ❌ 报错"unsupported, use companion (P1)" | 进程账本/收尸是架构缺口（无伴生无内核收尸），非代码量问题 |
 | container_build | ❌ P1 伴生 | 需 daemon 可见宿主路径 + 构建流式回传——瘦模式只有 shell 透传，等终态 |
 | 进程账本/断线五层 | ❌ | 架构债，必须等终态 |
 
 **搬运原则：代码债便宜就还（孤立函数，伴生来了直接删）；架构债必须等终态**
 （长在会话/账本/协议的骨头里，重造 = 重新踩坑）。
+
+### 10.0.1 ssh 连接自愈——ControlMaster 三件套 + 僵尸探测（v3.22，AD-028）
+
+P0 瘦模式的连接层自愈（继承 Python 版已验证设计 + 一处关键加固）：
+
+**三件套（Python 版 `_ensure_alive`/ControlMaster 语义）**：
+1. **连接复用**：`ssh -M -S <socket> -o ControlPersist=300`——master 后台保活 5 分钟，
+   后续操作多路复用，不重复握手（瞬时网络抖动无感）
+2. **操作前探活**：每次操作前检查 master 死活；死 → 用声明配置透明重建——调用方
+   不见 stale 连接；**机器注册永不摘除**（重连失败 = disconnected 状态，status 可见）
+3. **显式重连**：status 提示 Agent 可触发（machine 层的 wake 投影）
+
+**加固：往返探测替代 `-O check`（AD-028 核心）**——`-O check` 只证 socket 文件活着，
+不证 master 可用。僵尸 master（网络半开/sshd 半死/Windows conhost 会话泄漏把
+server 侧拖坏）的症状：check 通过但**新 channel 打开挂死**——Python 版对此无解。
+
+```
+每次操作前：走 master 跑 echo <nonce>，5s 超时
+  ├─ 通 → 健康，执行操作
+  ├─ 挂/超时 → 僵尸 master：-O exit 强拆 + socket 清理 + 全新 master 重建
+  │            （重建仍失败 → machine 标 disconnected，操作报明确错误）
+  └─ 连接不存在 → 正常惰性重建
+```
+
+**会话卫生（Windows 经验，Python 版 powershell_provider 已验证）**：
+- PowerShell 会话用 `-File -` stdin 脚本模式（无 PTY 干扰）+ `-NoLogo -NoProfile`
+- **console 状态隔离是 ssh 协议原生的**：每 session channel 独立 conhost/PTY 实例，
+  一个 PowerShell 会话改 OutputEncoding/chcp 不污染其他 channel——多路复用 socket
+  只传字节不带 console 状态
+- **per-machine 并发会话上限（默认 4）**：防 Windows OpenSSH conhost 清理 bug 的
+  进程树堆积（server 侧病了症状像"socket 污染"——新会话全挂），也防 Agent 失忆开满屏
+- **每操作硬超时**：channel 打开挂死不拖死工具调用
+
+**边界（诚实条款）**：这是连接层自愈，不是断线五层——无主动心跳（L1）、无会话
+解耦（L4：SSH 死时远端 shell 进程仍全灭）、重连是惰性的（下次操作时才发生）。
+瘦模式自愈到"瞬时抖动透明 + 僵尸可自清 + 永久断线可见"为止，五层等伴生。
 
 **断线协议（五层，v3.14）**——瘦模式的结构性缺陷（SSH 死 = 一切死，Agent 只能用
 试错发现故障）在伴生架构下获得完整解法：
