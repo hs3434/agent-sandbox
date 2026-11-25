@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.18 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（进程手/睡眠唤醒/自状态文档，心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键（锚点零信息量）；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2 预留；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式订阅）；v3.16 description 内嵌拉取指引；v3.17 响应捎带通知（piggyback）；v3.18 进程手收缩为 exec_async 单工具（观察干预归 shell，账本退化为一等数据）
+> 状态：v3.19 — 2026-11-24，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -53,14 +53,15 @@ resource_id = "{tenant}:{type}:{name}"
 例: hu:exec_env:rnaseq-worker-01 / hu:policy:net-default / hu:credential:db-password / hu:snapshot:before-deg
 ```
 
-### 2.2 资源类型注册表
+### 2.2 资源类型注册表（P0 仅 exec_env 有消费者；"一切皆资源"统一在数据层——
+注册表/ID 语法/审计——不在动词层；P1 起 policy 等以兄弟工具分化，见 AD-022）
 
-| type | capabilities | 生命周期 | CRUD 对称性 | 恢复机制 |
+| type | capabilities | 生命周期 | 恢复机制 | 阶段 |
 |---|---|---|---|---|
-| exec_env | shell/files/snapshot（capability = 平台原语，非软件清单，见 §10） | 运行面状态机 | C/R/D + 重建式 U | 快照/回滚（重建成本高）；workdir 独立恢复轴（见 §7） |
-| policy | rule 读改写 | 配置版本化 | 完整 CRUD | 版本化回滚（成本低） |
-| credential | inject/recycle | 注入↔回收 | C/D、无 R、重建式 U | 重新注入（秘密不可快照） |
-| snapshot | 只读元数据 | 创建→保留→轮转 | C/R/D | —（本身即恢复手段） |
+| exec_env | shell/files（capability = 平台原语，见 §10） | 运行面状态机 | wake/同名重建/workdir 不变量 | **P0** |
+| policy | rule 读改写 | 配置版本化 | 版本化回滚 | P1 |
+| credential | inject/recycle | 注入↔回收 | 重新注入 | P2 |
+| snapshot | 只读元数据 | 创建→保留→轮转 | —（本身即恢复手段） | P1 |
 
 ### 2.3 元数据（共享）
 
@@ -84,14 +85,15 @@ created → starting → running → stopping → stopped → removing → remov
 - 迁移幂等（重复调用同状态）
 - 超时驱动：starting 30s / stopping 60s
 - **睡眠/唤醒由 Agent 自主决定（AD-008）**：sleep = graceful stop（stopped，容器可写层
-  保留，文件系统原样）；wake = start **续用**（非重建，进程不复活）——比 env revert
-  （重建）便宜的日常续用通道。恢复阶梯：wake（续用）< 标准镜像重建（commit 快照 P1 评估）
+  保留，文件系统原样）；wake = start **续用**（非重建，进程不复活）——比同名重建
+  （自愈）便宜的日常续用通道。恢复阶梯：wake（续用）< 标准镜像重建（commit 快照 P1 评估）
 - **唤醒失败降级链**：容器丢失（宿主重启/docker prune）→ wake 报错 → 自动走重建链
-  （标准镜像/baseline + workdir 重挂 + 自状态文档仍在（MCP 直连，见 §4.1）——降级不失忆）- 策略时限默认仅计 running（睡眠不烧执行时长，占磁盘；磁盘配额 P1）
-- 无 update：改镜像/限额 = 重建（不可变基础设施）
+  （标准镜像 + workdir 不变量自动重挂 + 自状态文档仍在（MCP 直连，见 §4.1）——降级不失忆）
+- 策略时限默认仅计 running（睡眠不烧执行时长，占磁盘；磁盘配额 P1）
+- 无 update：改镜像 = 同名重建（不可变基础设施，见 §7.2 自愈语义）
 - **并发仲裁（P0 必需）**：每个 exec_env 持有编排层互斥锁——同一时刻只允许一个生命周期
-  迁移或 revert 在途；第二个操作立即拒绝（409 conflict，非排队）。revert 内部五步视为
-  一个临界区（锁覆盖 ①→⑤）。锁随 removed 释放；error 状态持有锁直到显式 reset/重建
+  迁移或自愈重建在途；第二个操作立即拒绝（409 conflict，非排队）。自愈重建（remove +
+  同名 create）视为一个临界区。锁随 removed 释放；error 状态持有锁直到显式重建
 
 ### 3.2 配置（版本化）
 ```
@@ -109,17 +111,32 @@ injected → active → recycled（任务结束）/ expired（超时兜底）
 
 ## 4. 控制面工具清单（MCP）
 
-resource_create / resource_inspect / resource_remove
-shell_* / file_*（capability 校验后路由到数据面）
-exec_async（非阻塞起后台进程 → 句柄；观察干预归 shell，见 §4.2）
-revert（P0 = 标准镜像重建，见 §7.0；时点回滚随快照轴 P1）
-state_get() / state_put(doc)（记忆文档：单文档无键，MCP 直连，见 §4.1）
-status（本体感觉：聚合只读的身体事实，见 §4.3）
-events(after_seq)（身体事件流增量拉取：进程死亡/env 状态迁移/断线重连，audit 窄化视图，见 §4.4）
-env(capabilities)
-—— P1：policy_get / policy_set / policy_versions / policy_revert（网络策略落地随开）；
-snapshot / snapshot_list / snapshot_delete（workdir 快照轴，§7.1）
-—— P2：credential_inject / credential_recycle（无 read，见 §9）；metrics
+**P0（7 个，全部有真实消费者；description 直接写全使用说明——工具面已薄到无需渐进发现，env 元工具出局 AD-023）**：
+
+env_create(name, {image?, purpose?})              —— 造身体/同名自愈（见 §7.2）
+resource_inspect(id?)                             —— 单资源深查（缺省=默认 env）
+resource_remove(id?, {purge?=false})              —— 移除（默认保留 workdir，purge 才删）
+image_build(tag, {dockerfile?, machine?})         —— 声明→标准镜像（见 §7.4）
+shell_exec(cmd, {shell_id?, machine?, timeout?=60, async?=false})   —— 双模式执行（见 §4.2）
+shell_new / shell_remove / shell_list             —— 会话管理（复用 cd/venv 状态用）
+file_read / file_write / file_patch / file_search —— 结构化文件操作（探取型）
+state_get() / state_put(doc)                      —— 记忆文档（单文档无键，见 §4.1）
+status()                                          —— 本体感觉快照（见 §4.3）
+events(after_seq)                                 —— 事件流回放（见 §4.4）
+
+**P1**：policy_set / policy_get / policy_versions（网络策略）；snapshot_*（workdir 轴，§7.1）；
+set_default（如跟随式默认不够用）；伴生服务模式（替换 ssh 瘦模式）
+**P2**：credential_inject / credential_recycle（无 read，见 §9）；metrics；vm/k8s backend
+
+### 4.0 跟随式默认（走到哪，停到哪）
+
+```
+切换（驻留型）：env_create / shell_exec / shell_new（显式带 machine/env 参数时）
+不切（探取型）：file_* 全族、resource_inspect——拿一下东西不算换工作台
+初始：首个 env_create；确认：status.default（唯一确认源）
+省略 machine/env 参数 = 打默认
+description 注明规则与漂移性（"默认 = 你最后一次 shell 操作的机器，status 可确认"）
+```
 
 ### 4.1 自状态文档（Agent 的记忆，AD-008）
 
@@ -169,26 +186,37 @@ snapshot / snapshot_list / snapshot_delete（workdir 快照轴，§7.1）
 - **唤醒降级链不失忆**：容器丢失走重建时，状态文档在平台侧 SQLite 键值存续——
   身体可以换，记忆不丢（比 v3.5 的 workdir 方案更早可用：先有感觉，再有身体）
 
-### 4.2 进程手（exec_async 单工具 + 隐形账本，v3.18 收缩）
+### 4.2 shell_exec 双模式（v3.19 终态）
 
-- `exec_async(cmd)`：非阻塞起后台进程，返回 `{pid, handle_id}`——不占 shell 会话
-- **句柄账本是数据不是工具**：进程注册进 per-env 句柄表并**持久化 SQLite（P0-m2）**，
-  控制面重启不丢；死亡/状态变化走响应捎带（§4.4）与 status 进程存活字段送达——
-  平台记账（事实），Agent 读账走 status/捎带，**无专门读账工具**
-- ~~process_list / process_logs / process_signal~~（v3.18 砍，AD-020）：观察干预归
-  shell（tail/ps/kill）——userland 命令是 Agent 与生俱来的手，平台不重复造；
-  "我起了什么"是记忆问题归 state doc，跨机聚合真需求出现时 status 扩字段
-- **容器停止 → 异步进程全灭**（stop/revert 链路同理）：句柄显式标 dead，不静默清理
-  （死亡事实经捎带送达，对齐自状态文档记忆）
-- **平台不复活进程**（诚实条款）：容器停止 = 进程消亡；进程复活 = 重建应用状态，
-  复杂且易腐——"该重启哪些进程"由 Agent 依自状态文档决定，平台只保证身体持久性
-- 不做全局进程资源类型（AD-004 纪律）：句柄表 per-env 即可，出现跨 env 进程治理
-  需求时再资源化
-- 端口暴露/预览（port_expose）：P1 记接缝，P0 不实现（单机形态暂无消费场景）
+**阻塞模式（async=false，默认）**：发命令、等到底、拿结果。
+- shell_id 有 = 会话内跑（复用 cd/venv）；无 = 一次性 shell
+- timeout 默认 60s；到点 = 杀进程组 → 返回 `{exit_reason:"timeout", 部分输出}`
+  （确定性事实，不挂死；想跑更久 = async，语义自洽）
+- 返回 `{exit_code, output(合并流，上限截断留尾), duration}`
+- 输出**在返回值里**（同步）；无转 waiting 态、无轮询、无缓冲——阻塞执行就该笨
+
+**异步模式（async=true）**：立即返回，进程后台跑，活过 shell 会话。
+- **拒绝 shell_id**（错误提示）——async 一律新 bash，命令须自足
+  （要环境就写进命令行：`cd /app && source .venv/bin/activate && exec npm start > server.log 2>&1`）
+- 实现（linux）：`bash -c "exec " + cmd` + `SysProcAttr{Setsid: true}`——bash exec
+  变身使 `Process.Pid` 精确 = 命令自身 pid；setsid 使其自成进程组
+- 死活判定 = **内核收尸**（`cmd.Wait()` goroutine，非轮询探活——pid 复用风险为零，
+  退出瞬间事件递送）→ 死亡事件进审计流 → 捎带送达
+- 返回 `{handle_id, pgid, state:"running"}`；输出 Agent 自管重定向（异步输出落文件）
+- 杀：Agent `shell_exec("kill -- -<pgid>")`（userland 命令，平台不造 signal 工具）
+
+**句柄账本（数据，非工具）**：`handle → {pgid, cmd, state, exit_reason, env_id}`
+持久化 SQLite（控制面重启不丢）；容器停止 → 全组标 dead（不静默清理）；
+捎带与 status 只读消费。~~process_list/logs/signal~~ 已砍（AD-020）：观察干预归
+shell（tail/ps/kill），"我起了什么"归 state doc。
+
+**OS 分叉的内部化**：进程组 kill（linux pgid / windows taskkill /T）、setsid 语义、
+shell 方言差异——全部是**伴生服务的内部实现分支**，协议层统一暴露
+`exec/kill(handle)/wait` 语义，OS 无关（P1 伴生兑现；P0 ssh 瘦模式见 §10.0 分级）。
 
 ### 4.4 身体事件流——拉模式订阅，平台不向 Agent 脑内推消息（v3.15，AD-017）
 
-**问题**：MCP 工具面原为纯拉（轮询 status/process_logs），Agent 对"进程死了/env 崩了/
+**问题**：MCP 工具面原为纯拉（轮询 status），Agent 对"进程死了/env 崩了/
 断线了"的感知延迟 = 轮询间隔，长任务需自起轮询循环。MCP 协议虽有 server → client
 notification 能力，但**客户端支持度参差**（推了可能无人收），且推送的接收方是 Agent
 的 context window——推 10 条通知 = 往上下文塞 10 条消息，打扰权应留在 Agent 手里。
@@ -262,8 +290,8 @@ Claude Desktop）后确认：唯一被普遍消费的通知通道是 `tools/list
 
 事件模型：{id, ts, tenant, subject, resource_id, action, outcome, duration_ms, detail(脱敏)}
 类型（按引入阶段分组，勿预建无消费者的事件类型）：
-- P0：tool_call / resource_created / resource_removed / error
-- P1：snapshot_created / snapshot_reverted / policy_change / policy_blocked
+- P0：tool_call / resource_created / **resource_recreated**（自愈语义标记）/ error
+- P1：snapshot_created / snapshot_restored / policy_change / policy_blocked
 - P2：network_decision / credential_injected / credential_recycled（file_op 归入
   tool_call 的 detail，不单列——文件操作经 shell/file 工具即 tool_call）
 脱敏：秘密值存 sha256 指纹，明文永不落库
@@ -292,25 +320,34 @@ exec_env
 - **增量状态的正向工作流 = 写进 Dockerfile**：Agent 装了镜像之外的依赖且需要保留，
   修正声明（Dockerfile）而非快照运行时——环境的**声明式真相**在 Dockerfile，
   与"执行环境不可变"哲学一致
-- **时间宽容**：恢复的正确性优先于速度，NFR-1 的 revert 延迟只约束"标准镜像重建"
+- **时间宽容**：恢复的正确性优先于速度，NFR-1 的自愈重建延迟只约束"标准镜像重建"
   路径（见 §15）
 
-- **环境是牛，工作目录是资产**：env revert 丢弃运行时，workdir 原样保留并重挂到新实例——
-  环境搞坏 ≠ 丢工作成果（对齐 Docker commit 排除 volume / K8s 重建保留 PVC 的行业语义）
-- workdir 挂载路径属于 ExecEnvSpec（不可变，create 时定）；快照只记 `excluded: [workdir]` 元数据
-- **workdir 永不进 env 快照**（env 快照把新工作冻结进旧时点 = revert 即丢工作）；
-  与凭证不进快照同构但理由不同：凭证为安全，workdir 为数据完整
+**workdir 不变量（v3.19 升格，自愈的机制基础）**：
+
+```
+workdir = f(work_home, env_name)      —— 名字即地址
+```
+
+- 宿主机路径由 env 名派生（`work_home/<name>/` → 容器 `/workspace`，唯一 bind-mount）
+- **同名 create = 同一工作现场**：容器实例可生可灭，目录随名字永续——恢复不是动作，
+  是命名系统的副作用
+- remove 默认保留目录（purge 才删）——名字是资产的地址，不是实例的属性
+- **三角色同 inode**：Agent（容器内 /workspace）、sandboxd、daemon（宿主机
+  work_home/<name>）各用自己的名字指同一份文件——容器路径⇄宿主机路径的双向翻译
+  仅对 bind-mount 成立（overlay 无稳定翻译）——**workdir 是容器世界与宿主机世界
+  之间唯一的确定桥**，image_build 的路径校验（§7.4）由此而来
 - 跨节点约束（P2）：docker volume 本机绑定；多节点时 workdir 后端换网络卷，P0 单机无此问题
 
-两轴恢复矩阵：
+两轴恢复矩阵（v3.19 语义更新）：
 
 | 故障模式 | 恢复动作 | 机制 |
 |---|---|---|
-| 环境坏、数据好（最常见） | env revert，workdir 原样重挂 | env 快照 |
-| 数据坏、环境好 | workdir restore（恢复到数据快照点/git 点） | workdir 快照 |
-| 都坏 | 全量恢复：env revert + workdir restore | 全量快照对（同一时刻成对打） |
+| 环境坏、数据好（最常见） | remove + 同名 create（自愈），workdir 不变量自动保留 | 标准镜像 + 不变量 |
+| 数据坏、环境好 | workdir 快照恢复（P1）/ git 检出 | workdir 快照轴 |
+| 都坏 | 自愈 + workdir 快照恢复 | 上两者组合 |
 
-**恢复边界 = 本地态**（哲学条款）：两轴快照只恢复本地状态（容器层/文件系统/工作目录）。
+**恢复边界 = 本地态**（哲学条款）：恢复只覆盖本地状态（容器层/文件系统/工作目录）。
 对外部世界的副作用——服务端状态（会话/账号/风控）、支付、git push——结构性不可恢复，
 其可观测性与管控由审计（network_decision / audit_query）与网络策略承担。
 docker 沙箱同理（外部交互占比小而已）。
@@ -327,24 +364,29 @@ docker 沙箱同理（外部交互占比小而已）。
 - ~~type: baseline~~（baseline := 标准镜像引用，不是快照记录，见 §7.3）
 - ~~excluded: credential_ids~~（凭证 P2；workdir 永不在 env 快照内的约束保留）
 
-### 7.2 revert 流程（P0 = 镜像重建三步；快照点回滚随快照轴 P1 扩为五步）
+### 7.2 自愈 = 同名重建（v3.19，revert 工具出局 AD-021）
 
-P0（env 轴，无快照存储）：
-1. 校验（存在/归属/权限）→ 2. 停止实例 + 丢弃容器 → 3. 从标准镜像重建 + **重挂原 workdir 卷**
+**revert 之死**：其全部实质承诺已由两个更基础的结构兑现——
+① **workdir 不变量**（§7.0）：`workdir = f(work_home, env_name)`，名字即地址，
+重建自动回到工作现场；② **注册表 name 键控**：同名 create = 同一身份复活（审计连续）。
+剩余差异仅为审计事件类型（`resource_recreated`），不值一个独立工具 + 五步流程 + 补偿链章节。
 
-P1（有快照后扩为五步）：
-1. 校验（存在/归属/权限/scope 匹配）
-2. 停止实例（graceful → 超时强杀）+ **quiesce workdir**：fsync 挂载卷（crash-consistent 即可，日志文件系统可恢复；应用级 flush hook 可选）
-3. 从快照载体重建 env，**重挂原 workdir 卷**（非快照内）
-4. 恢复非状态资源：策略从 policy 当前版本重新绑定；凭证重新 inject（P2）；workdir 所有权修正（uid 映射）；标签沿用
-5. 校验（healthcheck）+ 审计
+**自愈流程（Agent 视角两步）**：
 
-失败补偿链（②③ 失败窗口，两版通用）：
-- ② 失败：实例已在停路径，重试强杀；workdir 卷不受影响
-- ③ 重建失败：重试一次 → 仍失败则从 **标准镜像（baseline 引用）**重建 → 镜像也丢 → 环境标 error，
-  保留旧实例 backend 残留与 workdir 卷供人工排查（workdir 永不在补偿链中被销毁）
+```
+1. resource_remove("dev-2")        （或它已处于 error 态）
+2. env_create(name="dev-2", image=<版本>)   —— 同名！
+   → workdir 自动 = work_home/dev-2/   （不变量保证，目录还在原地）
+   → 身份延续（键控）、审计标记 resource_recreated（自愈语义）
+```
 
-要点：revert 恢复"环境状态"，配置/凭证/workdir 永远走各自活通道——快照永不携带策略、秘密和新工作。
+一句话给 Agent：**拆了重搭，东西还在原地；换镜像版本 = 拆了重搭时给新镜像**。
+
+**实现内部（平台侧，Agent 不可见）**：create 同名命中已存在记录 → 复活路径
+（跳过重复注册、审计标 recreated、锁临界区覆盖 kill-旧容器 + run-新容器）。
+
+**失败处理（原补偿链的归宿）**：重建失败重试一次 → 仍失败 → 环境标 error，
+保留 workdir（不变量下结构上不可能被销毁）供人工排查。error 态锁保持到显式重建。
 
 ### 7.3 策略（按可重建成本分层保留）
 
@@ -352,18 +394,38 @@ P1（有快照后扩为五步）：
 |---|---|---|---|
 | env | 标准镜像（Dockerfile） | 标准镜像由 Dockerfile 版本管 | 手动 snapshot 调用（env 轴快照暂缓，见下） |
 | workdir | 文件级去重（chunk hash） | N=20 轮转（便宜可高频） | 手动 + git 仓库可选 auto-stash（P1 优化） |
-| full | env+workdir 成对 | N=2 | 显式调用（重型检查点） |
+| ~~full~~ | ~~env+workdir 成对~~ | — | ~~已砍（v3.13）——env 轴快照不存在后"成对"结构上不可能~~ |
 
 **baseline := 标准镜像引用（v3.7 简化）**：标准镜像优先后，创建时 env == 标准镜像，
 自动 baseline 的 commit 快照是零信息量复制——baseline 直接定义为标准镜像引用
-（零拷贝零成本），补偿链兜底 = 从标准镜像重建。
+（零拷贝零成本），自愈兜底 = 从标准镜像重建。
 **commit 快照暂缓（v3.7 裁剪）**：引入独立快照流（stop/commit/tag/轮转）复杂度不匹配
-当下收益——P0 的 env 轴恢复 = wake 续用 + 标准镜像重建两档；Agent 在 env 内装了
-镜像之外的增量依赖且需要保留时，正向工作流是**写进 Dockerfile**（声明式真相），
-回滚重建自然携带。commit 快照留作 P1 评估项（出现"增量状态频繁且不值得 Docker 化"
-的真实场景再引入）。
+当下收益——P0 的 env 轴恢复 = wake 续用 + 同名重建两档；Agent 在 env 内装了
+镜像之外的增量依赖且需要保留时，正向工作流是**写进 Dockerfile → image_build（§7.4）**
+（声明式真相），同名重建自然携带。commit 快照留作 P1 评估项。
 
-引用计数：被 revert 链引用的快照不轮转；跨轴组合恢复时 full_pair 双方一起计数。
+### 7.4 image_build——声明式工作流的执行手（v3.19 新增）
+
+**存在理由**：AD-007 说"增量状态的正向工作流 = 写进 Dockerfile"，但没有
+"Dockerfile → 镜像"的工具，链路断一环——image_build 补上，标准镜像 =
+image_build 产物，§7.3"标准镜像由 Dockerfile 版本管"由此有了执行机制。
+
+```
+image_build(tag, {dockerfile?="Dockerfile", machine?})
+  路径解析：dockerfile 相对（默认或 machine 的）workdir
+  约束：解析结果 ⊆ workdir —— 物理事实（daemon 只见 bind-mount，
+        overlay 无稳定路径翻译），非任意限制
+  拒绝 inline content —— Dockerfile 必须是 workdir 里的文件（可审计）
+  产物：该 env 的新标准镜像 → 下次同名重建的新基线
+  错误：bad_path / dockerfile_missing / build_failed（附 daemon 输出尾部）
+```
+
+**声明式自愈闭环**：`file_write(Dockerfile) → image_build(tag) → remove + 同名
+create(image=tag)`——改声明、造基线、拆重搭，三步换新身体不丢工作。
+
+**实现注记（容器化部署）**：Agent 给容器路径（/workspace/...），平台换算宿主路径
+（work_home/<name>/...）喂 daemon——换算函数仅对 bind-mount 成立（§7.0 不变量）；
+sandboxd 自身容器化部署时依赖 work_home 双路径（§13）。
 
 ## 8. 配置子系统（P1 起逐步引入）
 
@@ -394,7 +456,7 @@ recycle：清除环境变量 → 撤销 token → 状态 recycled
 | 意图 | 位置 | 语义 |
 |---|---|---|
 | 仅本次运行期 | env 层（容器文件系统） | 回滚即逝——本来就要临时 |
-| 跨 env 重建存活 | workdir（资产轴） | env revert 不丢，与代码同为资产 |
+| 跨 env 重建存活 | workdir（资产轴） | 同名重建不丢（不变量），与代码同为资产 |
 | 记住存在（非值） | 记忆文档记元数据（路径/用途/过期） | 秘密卫生条款覆盖 |
 
 上交通道（P2 评估）：credential 资源已有 C/D（§2.2），可定义
@@ -409,12 +471,22 @@ recycle：清除环境变量 → 撤销 token → 状态 recycled
 
 ## 10. 数据面（Backend 契约）
 
+**backend × OS 双轴矩阵（v3.19）**——backend = 传输/托管方式，OS = 目标系统，正交：
+
+| | Linux | Windows | Android |
+|---|---|---|---|
+| **docker** | ✅ P0（本机容器） | ⚠️ P1 评估（Windows 容器/Docker Desktop） | ❌ 无原生 Docker |
+| **ssh**（瘦模式过渡） | ✅ P0 | ✅ P0（最小过渡，见分级） | ⚠️ Termux 能跑非主流 |
+| **companion**（伴生，终态） | ✅ P1 | ✅ P1（Go 跨编译，OS 差异内部化） | ✅ P1（**伴生架构的决定性用例**——瘦客户端在安卓不可用：无原生 Docker、shell 非标配） |
+| vm/k8s | — | — | — P2 评估 |
+
 ```python
 class Backend(ABC):
     capabilities: set[str]
     create/start/stop/remove
-    exec / read_file / write_file
-    snapshot(exclude_secrets=True) / restore(ref)   # P1
+    exec(cmd, async?) / read_file / write_file
+    kill(handle) / wait(handle)                      # OS 差异内部化（v3.19）
+    snapshot(scope) / restore(ref)                   # P1（workdir 轴）
     metrics()                                        # P2
     health()                                         # 连接健康（v3.14）
 ```
@@ -426,21 +498,32 @@ class Backend(ABC):
 逐平台适配，**异构在客户端这一端，永远追不完**。
 
 **决策（vscode Remote-SSH 语义）**：连接远程时部署**伴生服务**——Go 静态自包含
-二进制（一次编译，Linux/Windows 直接运行），之后本地 sandboxd 与远端伴生服务做
+二进制（一次编译，Linux/Windows/Android 直接运行），之后本地 sandboxd 与远端伴生服务做
 **协议对话**而非隧道透传。健壮性由两端**同构程序**共同保证：编码/信号/PTY/进程
 语义在协议层对齐，异构被伴生进程封装。
 
 - **Go 静态二进制是采纳前提**：伴生服务必须"一次编译、scp 过去直接跑"——解释型
   语言（Python 需远端装解释器/依赖）不可行，这是本项目选择 Go 的架构级理由
-- **ssh 瘦模式降级为 bootstrap**：裸 SSH 只剩一个职责——送二进制、拉起伴生服务、
-  握手、退役（vscode 先用 ssh 上传 vscode-server 同构）；此后一切操作走伴生协议
 - **会话与连接解耦（tmux 语义）**：shell/进程会话挂在伴生服务下、不挂在 SSH 连接上
   ——断线 = 遥控器没信号，远端会话存活；重连自动接管（见断线协议）
 - **信任模型（默认半自动）**：伴生二进制 scp 至远端 + 打印启动命令，**人工确认执行**
   （部署常驻 daemon 信任门槛高）；全自动模式（vscode 式，连接即部署）为配置开关，
   默认关
-- **功能继承声明**：本 backend 契约的执行语义（PTY 持久会话、原子文件写、渐进发现、
-  审计查询、敏感路径警告）继承 sandbox-mcp v0.3 已验证设计，不重新发明
+- **功能继承声明**：PTY 持久会话、原子文件写、审计查询、敏感路径警告——继承
+  sandbox-mcp v0.3 已验证设计，不重新发明
+
+**瘦模式分级（P0 过渡，v3.19 修正）**——伴生未就绪时 ssh 是**最小过渡绳索**：
+
+| 能力 | P0 瘦模式 | 说明 |
+|---|---|---|
+| connect + shell_exec 阻塞 | ✅ | 唯一核心承诺（Linux bash PTY / Windows PowerShell） |
+| file_* | ✅ 完整 | 走 SFTP 子系统——字节流无编码问题 |
+| **编码适配（代码页探测/GBK）** | ✅ **直接抄** | Python 版已有（encoding_utils + powershell_provider 语义）——代码债便宜就还 |
+| async=true | ❌ 报错"unsupported, use companion (P1)" | 进程账本/收尸是架构缺口（无伴生无内核收尸），非代码量问题 |
+| 进程账本/断线五层 | ❌ | 架构债，必须等终态 |
+
+**搬运原则：代码债便宜就还（孤立函数，伴生来了直接删）；架构债必须等终态**
+（长在会话/账本/协议的骨头里，重造 = 重新踩坑）。
 
 **断线协议（五层，v3.14）**——瘦模式的结构性缺陷（SSH 死 = 一切死，Agent 只能用
 试错发现故障）在伴生架构下获得完整解法：
@@ -463,7 +546,7 @@ Agent 体验：从"不断尝试开新 powershell 试错"变为"status 瞥一眼 
 | vm (future) | shell/files/snapshot | libvirt/qemu 外部快照（VM 级 CoW）或存储层快照（qcow2 内部快照/切片） | 硬件级虚拟化（独立内核） | 需要内核隔离/不同 OS/系统级实验（内核模块、网络栈、多发行版矩阵） |
 | k8s (future) | shell/files/snapshot | Pod 重建 + PVC 快照 | 容器编排（多节点） | 平台托管形态：多节点调度、PVC 原生两轴快照 |
 
-**vm 与 docker 的选型语义**：默认 docker（快、轻、秒级 revert）；当任务需要**独立内核**
+**vm 与 docker 的选型语义**：默认 docker（快、轻、秒级自愈重建）；当任务需要**独立内核**
 （内核模块/驱动实验、安全研究、跨 OS 矩阵——Ubuntu/macOS-Windows via VM）时 vm backend
 提供硬件级隔离。快照语义对齐两轴模型：VM 磁盘镜像外部快照（CoW 层）= env 轴，
 挂载的共享目录/云盘 = workdir 轴。启动秒级→分钟级的代价由隔离收益换。
@@ -503,6 +586,36 @@ Agent 体验：从"不断尝试开新 powershell 试错"变为"status 瞥一眼 
 
 入口认证（门锁，见 §9）：stdio/unix socket = 本机天然门禁；HTTP = static token（sandbox.yaml）。多租户认证 P2。
 
+### 13.1 work_home 双路径（容器化部署硬约束，v3.19）
+
+sandboxd 自身可能跑在容器里（经 socket/HTTP 对接 daemon）——此时"宿主机路径"
+对 sandboxd 不可见，但 image_build 需要 daemon 可读的宿主路径。解法 = 显式双路径：
+
+```yaml
+storage:
+  work_home: /work_home                    # sandboxd 视角（volume 挂载点）
+docker:
+  work_home_host: /srv/agent-sandbox/work_home   # 宿主机视角（daemon 用）
+  network: "agent-sandbox"                 # env 互联：容器名 DNS（见下）
+```
+
+- 不变量全式：`env_name → sandboxd 路径 storage.work_home/<name>`（文件操作用），
+  `env_name → 宿主路径 docker.work_home_host/<name>`（daemon build 用）——
+  两路径同一 inode（部署时 volume 绑定保证）
+- **启动 fail-fast 校验**：检测到容器内部署 + work_home_host 缺失 → 拒绝启动
+  （配置错误拦在所有工作之前）；可选自检：inspect 自身 Mounts 与声明比对
+- 裸机部署：两路径合一，配置无感
+
+### 13.2 DNS 网络（env 互联，v3.19——继承 sandbox-mcp auto_network）
+
+- 管理的全部 env 加入 user-defined bridge 网络（首次 create 时 daemon 侧自动建）
+- **容器名即主机名**：Agent 在 dev-2 里 `curl http://build-1:8000` 直接通，零配置发现
+- **不开宿主端口映射**（继承 Python 版立场：暴露宿主端口会破坏沙箱网络隔离）——
+  env 间访问走容器网络；port_expose 接缝（P1）另有评估
+- 文件跨 env 传输：小文件走 file_*（跨 machine 参数），大文件走 DNS 网络 +
+  userland 传输（`http.server` + `curl`）——**不设共享目录机制**（backend 专属 +
+  shell 可代 + 双路径税，AD-023 否决；admin god-mode 容器同批否决）
+
 ## 14. 开源核心与平台层边界
 
 ```
@@ -541,13 +654,15 @@ Agent 体验：从"不断尝试开新 powershell 试错"变为"status 瞥一眼 
 | 里程碑 | 内容 | 对应章节 |
 |---|---|---|
 | P0-m1 ✅ | 资源模型 + backend 契约 + 快照/策略/审计骨架（纯契约，零死代码） | §2 §10 |
-| P0-m2 | SQLite 审计 sink + 内存注册表 + 状态机（含并发仲裁锁） | §3 §6 §13 |
-| P0-m3 | docker backend：create/exec/snapshot（标准镜像重建，commit P1 评估）/restore + 两轴挂载 | §7 §10 |
-| P0-m4 | sandbox.yaml 配置装配 + MCP server（工具面按 P0 子集暴露） | §4 §13 |
+| P0-m2 | SQLite 审计 sink + 注册表（name 键控）+ 状态机（含并发仲裁锁）+ 句柄账本 | §3 §6 §13 |
+| P0-m3a | docker×linux backend：create(同名自愈)/shell_exec 双模式/file/image_build | §4 §7 §10 |
+| P0-m3b | ssh×linux + ssh×windows（瘦模式最小过渡：connect/阻塞 exec/file_*（SFTP）/编码层抄） | §10.0 |
+| P0-m4 | sandbox.yaml 配置装配（双路径/DNS 网络）+ MCP server（7 工具） | §4 §13 |
 
-P1：策略资源化（网络边界）+ 审计脱敏 + workdir 快照轴 + commit 快照评估 +
-**ssh 伴生服务**（远端 sandboxd-lite 二进制 + 断线五层协议，§10.0——P1 第一个硬仗）
-P2：三层身份 + metrics + vm/k8s backend 评估
+P1：**伴生服务**（替换瘦模式——sandboxd-lite 二进制 + 断线五层 + async/账本在远程启用，
+§10.0——P1 第一个硬仗；覆盖 linux/windows/android 三 OS）+ 策略资源化（网络边界）+
+审计脱敏 + workdir 快照轴 + commit 快照评估 + docker×windows 容器评估
+P2：三层身份 + metrics + credential + vm/k8s backend 评估
 
 验证矩阵（`docs/verification/feature-test-matrix.md`）在 P0-m3 首个可运行 backend
 落地后建立——0 代码阶段无矩阵可写，预造空转。测试层级约定沿用 U/UI/P/D/M
@@ -561,8 +676,8 @@ P2：三层身份 + metrics + vm/k8s backend 评估
 
 | ID | 哲学（定性） | 可测量 NFR | 目标值 | 测量方式 |
 |---|---|---|---|---|
-| NFR-1 | 恢复优先 | revert 延迟（标准镜像重建路径） | p95 < 5s（commit 路径宽容，见 §7.0） | revert 流程计时 |
-| NFR-2 | 恢复优先 | revert 成功率 | > 99%（baseline 兜底后） | 补偿链各分支计数 |
+| NFR-1 | 恢复优先 | 自愈重建延迟（同名 create 路径） | p95 < 5s（镜像缓存命中） | 重建流程计时 |
+| NFR-2 | 恢复优先 | 自愈成功率 | > 99%（镜像兜底后） | 重建失败分支计数 |
 | NFR-3 | 能力释放 | 命令默认放行率 | = 100%（命令策略默认空） | policy.Decision 采样 |
 | NFR-4 | 执行环境不可变 | update 接口数 | = 0（改配置 = 重建） | API 面审计 |
 | NFR-5 | 凭证最小暴露 | 平台通道快照中明文密钥数 | = 0（范围 = 平台注入物；Agent 自建 userland 凭证不在平台承诺内，见 §9） | 快照载荷脱敏校验 |
@@ -572,8 +687,8 @@ P2：三层身份 + metrics + vm/k8s backend 评估
 | NFR-9 | 赋能操作 | env 冷启动延迟（create→running） | p95 < 10s（标准镜像有缓存） | create 流程计时 |
 | NFR-10 | 赋能操作 | exec 往返延迟（同步 shell） | p95 < 500ms | exec 计时 |
 
-P0 阶段只强制前 6 条中可测的（revert/放行/不可变/冷启动/exec——凭证条随子系统
-P2 落地）；其余随 P1/P2 落地。
+P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证条随子系统 P2 落地）；
+其余随 P1/P2 落地。
 
 ---
 
@@ -866,7 +981,7 @@ P2 落地）；其余随 P1/P2 落地。
   游标 = 订阅；② `process_logs(wait=true)` 阻塞等待语义（新输出/进程退出/超时）；
   ③ 不新增事件源（审计流复用）；MCP 原生 notification 与 WebSocket 同批留待
   客户端生态成熟后评估
-- 影响: §4.4 新增、工具清单 +1（events）、process_logs 加 wait 参数；感知权 =
+- 影响: §4.4 新增、工具清单 +1（events）、process_logs 加 wait 参数（后随 AD-020/021 演进收缩）；感知权 =
   拉模式（Agent 决定何时看、一看即得），与 v3.14 断线五层的 L2 状态迁移闭环
   （events 可增量消费状态迁移）
 - 日期: 2026-11-24
@@ -938,4 +1053,65 @@ P2 落地）；其余随 P1/P2 落地。
   revert + state×2 + status + events + env）；§4.4 感知栈 wait 通道移除（三通道：
   捎带→events→description）；AD-017/018/019 的 process_logs 表述作废；
   判决标准沉淀：**平台只造 shell 做不到的原语，shell 能做的一律不造**
+- 日期: 2026-11-24
+
+### AD-021: revert 出局——动词还原为名词的属性（v3.19）
+
+- 状态: Accepted（Supersedes §7.2 五步流程与"保留 revert"论证）
+- 背景: 三轮质疑链：① image_build 与 revert/create 重叠（都是"从镜像 run 容器"）；
+  ② revert 对 docker 是借来的快照术语，摩擦大；③ **致命一击——workdir 不变量
+  （workdir = f(work_home, env_name)）成立后，"Agent 自己编排 create+挂卷+改绑定"
+  的保留论证失效**：create 的 schema 里本来就没有挂卷参数，因为根本不需要——
+  不变量替它做了。同名 create 即完整自愈
+- 备选方案:
+  - 保留 revert 工具: 拒绝 — 剩余差异仅为审计事件类型，不值一个工具 + 五步流程
+  - revert 并入 create 参数: 拒绝 — 同样冗余且名字撒谎
+  - 自愈 = remove + 同名 create + 三个既有机制: 采纳 — workdir 不变量（名字即地址）+
+    注册表 name 键控（身份复活）+ 审计 resource_recreated 事件（自愈语义标记）
+- 决策: revert 工具出局；§7.2 重写为"自愈 = 同名重建"；NFR-1/2 改挂自愈重建路径；
+  事件类型 resource_recreated 进入 P0 组
+- 影响: 工具面 -1；§3.1 并发仲裁措辞、§7.0/7.1/7.3 同步；给 Agent 的一句话：
+  "拆了重搭，东西还在原地；换镜像 = 拆重搭时给新镜像"
+- 日期: 2026-11-24
+
+### AD-022: backend 双轴矩阵 + 工具命名去泛型（v3.19）
+
+- 状态: Accepted
+- 背景: ① P0 范围修正为 docker×linux + ssh×linux + ssh×windows（瘦模式过渡），
+  P1 增 companion×android（安卓是伴生架构的决定性用例：无原生 Docker、shell 非标配，
+  瘦客户端不可用）；② "resource_create 承担太多"担忧验算后发现 P0 参数面仅
+  (name, image?)——最薄工具；真膨胀点在 P1 多类型，解法是按类型分裂兄弟工具
+- 备选方案:
+  - 泛型 resource_create(type=...) 服务多资源: 拒绝 — 参数并集爆炸（AWS 泛型
+    Create 之误）；"一切皆资源"应统一在数据层（注册表/ID/审计），非动词层
+  - P0 resource_create、P1 分裂: 不一致 — P0 就一个类型，泛型前缀名不副实
+  - **env_create** 直呼其名，P1 加 policy_set 等兄弟: 采纳 — 名字诚实且分裂路径顺滑
+- 决策: ① §10 重构为 backend（docker/ssh/companion）× OS（linux/windows/android）
+  双轴矩阵，OS 差异 = 伴生内部实现分支，协议层 kill(handle)/wait OS 无关；
+  ② 工具名 resource_create → **env_create**（P0 唯一类型）；③ P0 ssh 瘦模式
+  最小过渡分级（connect/阻塞 exec/file(SFTP)/编码层抄 ✅；async/账本 ❌ 等伴生）；
+  ④ 搬运原则：代码债便宜就还，架构债必须等终态
+- 影响: §10/§10.0 重构、P0-m3 拆 m3a/m3b、P1 路线图（伴生提前为第一个硬仗）；
+  resource_ 前缀仅存 inspect/remove（P1 类型分化时再定去留）
+- 日期: 2026-11-24
+
+### AD-023: 否决批——share 共享目录、admin god-mode、env 元工具（v3.19）
+
+- 状态: Accepted
+- 背景: Python 对照轮收获的三个候选机制逐一拷问：① 共享目录（ro 全棵 + rw overlay）
+  精巧但 backend 专属（bind-mount 到 ssh/vm 不存在）+ DNS 网络下 shell 可代
+  （http.server + curl）+ 容器化部署再收一份双路径税；② admin /host 全局视图
+  容器服务于"跨机清理"，与 revert/自愈语义重复且是安全负债；③ env(action=help)
+  渐进发现在 7 工具薄面下节省 < 元工具自身成本（description 100% 注入优于按需 help）
+- 备选方案:
+  - share 留 P1 评估: 拒绝 — 否决理由充分（非"暂无场景"而是"有更好的替代"），
+    留评估位 = 给精巧但错误的方案留门
+  - admin 容器: 拒绝 — 跨机操作 P1 走伴生正门
+  - env 渐进发现: 拒绝 — 它的正确继承物是"tools/list 保持小"，靠工具面本身小达成
+- 决策: 三者否决，否决理由存档（防止未来看着 Python 版"设计挺精巧"又搬回来）；
+  env 互联 = DNS 网络（§13.2，容器名即主机名，不开宿主端口——继承 Python 版立场）；
+  工具面 7 个终态
+- 影响: §13.2 新增、工具清单 -1；Python 对照轮的最终资产清单 = PTY 会话语义 +
+  原子写 + SFTP + 编码层 + DNS 网络 + 显式 tag 防碰撞（commit P1 回归时）——
+  其余（share/admin/渐进发现/瘦客户端终态）全部否决且有档
 - 日期: 2026-11-24
