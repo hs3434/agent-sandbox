@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.20 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）
+> 状态：v3.21 — 2026-11-25，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -84,9 +84,11 @@ created → starting → running → stopping → stopped → removing → remov
 ```
 - 迁移幂等（重复调用同状态）
 - 超时驱动：starting 30s / stopping 60s
-- **睡眠/唤醒由 Agent 自主决定（AD-008）**：sleep = graceful stop（stopped，容器可写层
-  保留，文件系统原样）；wake = start **续用**（非重建，进程不复活）——比同名重建
-  （自愈）便宜的日常续用通道。恢复阶梯：wake（续用）< 标准镜像重建（commit 快照 P1 评估）
+- **睡眠/唤醒（AD-008 哲学保留，工具面 P1 回归 AD-026）**：sleep = graceful stop
+  （stopped，容器可写层保留，文件系统原样）；wake = start **续用**（非重建，进程不
+  复活）——比同名重建（自愈）便宜的日常续用通道。P0 无配额执行器（睡眠省执行时长
+  无消费者）且 ssh 物理机无"睡机器"语义（docker backend 专属）——动词随配额执行器
+  P1 回归；P0 生命周期迁移由平台内部驱动（docker backend 自愈重建走 stop 路径）
 - **唤醒失败降级链**：容器丢失（宿主重启/docker prune）→ wake 报错 → 自动走重建链
   （标准镜像 + workdir 不变量自动重挂 + 自状态文档仍在（MCP 直连，见 §4.1）——降级不失忆）
 - 策略时限默认仅计 running（睡眠不烧执行时长，占磁盘；磁盘配额 P1）
@@ -117,22 +119,21 @@ injected → active → recycled（任务结束）/ expired（超时兜底）
 
 ## 4. 控制面工具清单（MCP）
 
-**P0（18 个工具 / 7 个族，全部有真实消费者；description 直接写全使用说明——工具面
-已薄到无需渐进发现，env 元工具出局 AD-023。machine 参数 P0 全线不设——单机形态无
-消费者，AD-024；P1 ssh 出现时随 connect 族一起设计）**：
+**P0（17 个工具 / 6 个族，全部有真实消费者；description 直接写全使用说明——工具面
+已薄到无需渐进发现，env 元工具出局 AD-023。machine 注册走 sandbox.yaml 配置声明
+（零专用工具，Python 版同构）；machine_connect 动态注册工具 P1 随伴生回归，AD-026）**：
 
-**lifecycle 族（5）**——身体的一生：
+**lifecycle 族（3）**——身体的一生：
 env_create(name, {image?, tags?})                  —— 造身体/同名自愈（见 §7.2）
-env_sleep(id?)                                     —— 睡眠 = graceful stop（容器保留，§3.1）
-env_wake(id?)                                      —— 唤醒 = start 续用（非重建，进程不复活）
 resource_inspect(id?)                              —— 单资源深查（缺省 = 默认 env）
 resource_remove(id?, {purge?=false})               —— 移除（默认保留 workdir，purge 才删）
 
-**image 族（1）**：
+**image 族（2）**：
 image_build(tag, {dockerfile?})                    —— 声明→标准镜像（见 §7.4）
+image_list()                                       —— 可用镜像清单（env_create/image_build 的选型依据）
 
 **shell 族（4）**：
-shell_exec(cmd, {shell_id?, timeout?=60, async?=false})   —— 双模式执行（见 §4.2）
+shell_exec(cmd, {shell_id?, machine?, timeout?=60, async?=false})   —— 双模式执行（见 §4.2）
 shell_new / shell_remove / shell_list              —— 会话管理（复用 cd/venv 状态用）
 
 **file 族（4，探取型）**：
@@ -145,19 +146,21 @@ state_get() / state_put(doc)                       —— 记忆文档（单文�
 status()                                           —— 本体感觉快照（见 §4.3）
 events(after_seq)                                  —— 事件流回放（见 §4.4）
 
-**P1**：policy_set / policy_get / policy_versions（网络策略）；snapshot_*（workdir 轴，§7.1）；
-set_default（如跟随式默认不够用）；machine_connect 族 + machine 参数回归（远程形态）；
-伴生服务模式（替换 ssh 瘦模式）
-**P2**：credential_inject / credential_recycle（无 read，见 §9）；metrics；vm/k8s backend
+**P1**：machine_connect / machine_disconnect / machine_list（动态注册，随伴生服务）；
+伴生服务模式（替换 ssh 瘦模式）；lifecycle 睡眠动词（env_sleep/env_wake——随配额
+执行器回归，docker backend 专属语义，AD-026 移除记录）；commit 快照评估
+**P2**：policy_set / policy_get / policy_versions（网络策略，随多租户治理）；
+snapshot_*（workdir 轴，随多 backend）；credential_inject / credential_recycle
+（无 read，见 §9）；metrics；vm/k8s backend
 
 ### 4.0 跟随式默认（走到哪，停到哪）
 
 ```
-切换（驻留型）：env_create / env_wake / shell_exec / shell_new
-不切（探取型）：file_* 全族、resource_inspect、env_sleep——拿一下东西/睡一觉不算换工作台
+切换（驻留型）：env_create / shell_exec / shell_new（显式带 machine 参数时切 machine 默认）
+不切（探取型）：file_* 全族、resource_inspect——拿一下东西不算换工作台
 初始：首个 env_create；确认：status.default（唯一确认源）
-省略 id/env 参数 = 打默认
-description 注明规则与漂移性（"默认 = 你最后一次驻留操作的环境，status 可确认"）
+省略 machine/env 参数 = 打默认
+description 注明规则与漂移性（"默认 = 你最后一次驻留操作的目标，status 可确认"）
 ```
 
 ### 4.0.1 sudo/提权注记（v3.20，AD-020 的用户侧兑现）
@@ -695,13 +698,14 @@ docker:
 | P0-m1 ✅ | 资源模型 + backend 契约 + 快照/策略/审计骨架（纯契约，零死代码） | §2 §10 |
 | P0-m2 | SQLite 审计 sink + 注册表（name 键控）+ 状态机（含并发仲裁锁）+ 句柄账本 | §3 §6 §13 |
 | P0-m3a | docker×linux backend：create(同名自愈)/shell_exec 双模式/file/image_build | §4 §7 §10 |
-| P0-m3b | ssh×linux + ssh×windows（瘦模式最小过渡：connect/阻塞 exec/file_*（SFTP）/编码层抄） | §10.0 |
+| P0-m3b | ssh×linux + ssh×windows（瘦模式最小过渡：配置声明注册/阻塞 exec/file_*（SFTP）/编码层抄） | §4 §10.0 |
 | P0-m4 | sandbox.yaml 配置装配（双路径/DNS 网络）+ MCP server（7 工具） | §4 §13 |
 
 P1：**伴生服务**（替换瘦模式——sandboxd-lite 二进制 + 断线五层 + async/账本在远程启用，
-§10.0——P1 第一个硬仗；覆盖 linux/windows/android 三 OS）+ 策略资源化（网络边界）+
-审计脱敏 + workdir 快照轴 + commit 快照评估 + docker×windows 容器评估
-P2：三层身份 + metrics + credential + vm/k8s backend 评估
+§10.0——P1 第一个硬仗；覆盖 linux/windows/android 三 OS）+ machine_connect 动态注册 +
+lifecycle 睡眠动词（env_sleep/env_wake，随配额执行器，AD-026）+ 审计脱敏 +
+workdir 快照轴 + commit 快照评估 + docker×windows 容器评估
+P2：三层身份 + policy_* + snapshot_* + credential + metrics + vm/k8s backend 评估
 
 验证矩阵（`docs/verification/feature-test-matrix.md`）在 P0-m3 首个可运行 backend
 落地后建立——0 代码阶段无矩阵可写，预造空转。测试层级约定沿用 U/UI/P/D/M
@@ -722,7 +726,7 @@ P2：三层身份 + metrics + credential + vm/k8s backend 评估
 | NFR-5 | 凭证最小暴露 | 平台通道快照中明文密钥数 | = 0（范围 = 平台注入物；Agent 自建 userland 凭证不在平台承诺内，见 §9） | 快照载荷脱敏校验 |
 | NFR-6 | 凭证最小暴露 | credential_read 工具数 | = 0（结构性禁用） | 工具面审计 |
 | NFR-7 | 审计 = 复盘 | 事件可回溯率 | = 100%（脱敏后） | audit Query 覆盖 |
-| NFR-8 | 配额 = 保活 | 单任务超限不影响其他任务 | 无饥饿（P1 验证） | 配额测试 |
+| NFR-8 | 配额 = 保活 | 单任务超限不影响其他任务 | 无饥饿（P2 验证——配额执行器随治理身份） | 配额测试 |
 | NFR-9 | 赋能操作 | env 冷启动延迟（create→running） | p95 < 10s（标准镜像有缓存） | create 流程计时 |
 | NFR-10 | 赋能操作 | exec 往返延迟（同步 shell） | p95 < 500ms | exec 计时 |
 
@@ -1174,15 +1178,47 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   - write_stdin 三件套复活（sudo 场景触发）: 拒绝 — sudo 是已知时点 stdin，
     管道（echo PW | sudo -S）精确解决；三件套的独特价值是未知时点中途交互，
     那类程序对 Agent 是反模式且 Windows UAC 连 PTY 都驱动不了（Python 版从未解决）
-- 决策: ① +env_sleep/env_wake（lifecycle 族 5 工具）；② 全部签名删 machine?
+- 决策: ① +env_sleep/env_wake（lifecycle 族 5 工具，**AD-026 撤销**）；② 全部签名删
+  machine?（**AD-026 部分推翻——P0 含 ssh，目标选择型签名回归 machine?**）
   （P1 随 connect 族回归）；③ §4.0 跟随式默认两维拆分——P0 默认维度只有 env
   （workdir 可多开，§4.1），machine 维度 P1；④ §4.0.1 sudo 管道注记进
   shell_exec description
-- 影响: 工具面 16→18（7 族不变）；NFR-8 有了触达路径；跟随式默认的"驻留型"
-  增补 env_wake（唤醒 = 换工作台），env_sleep 是探取型（睡觉不换台）
+- 影响: 工具面 16→18（7 族不变）；跟随式默认的"驻留型"增补 env_wake，
+  env_sleep 是探取型（睡觉不换台）——**随后被 AD-026 撤销**（见下）
 - 日期: 2026-11-25
 
-### AD-025: Python 对照终审——特性映射表与豁免条款（v3.20）
+### AD-026: scheme 再审——sleep/wake 移除、image_list 补缺、machine 参数回归（v3.21）
+
+- 状态: Accepted（Supersedes AD-024 之 ①③；AD-024 的 sudo 注记与 write_stdin
+  判决维持）
+- 背景: scheme 复审第二轮，三个新事实：① 用户裁定 sleep/wake 非关键功能——
+  两个工具 = 两份 schema token 上下文税，且 P0 无配额执行器（睡眠"省执行时长"
+  是空头收益），ssh 物理机更无"睡机器"语义（docker backend 专属），AD-004
+  检验不通过；② env_create(image?) 缺选型依据——Agent 不知道有哪些镜像可用
+  （Python 版 list_images 有消费者）；③ **P0 不是单机形态**——双轴矩阵早有
+  ssh×linux/windows（AD-022），AD-024"单机无消费者"判决事实错误
+- 备选方案:
+  - sleep/wake 保留 + ssh 报 unsupported: 拒绝 — capability 声明可以救语义，但救不了
+    上下文税；无消费者的动词不进面（奥卡姆）
+  - sleep/wake 实现为平台内部路径（自愈重建的 stop 步骤）: 采纳 — 状态机 stopped 态
+    保留，迁移由内部驱动，Agent 视角只有 create/inspect/remove
+  - image_create 缺省值绑定默认镜像: 采纳搭配 — image 缺省 = 该 env 当前镜像
+    （同名自愈不换身体），换身体 = 显式给 image 参数
+  - machine_connect 工具进 P0: 拒绝 — 远程注册走 sandbox.yaml 配置声明（Python 版
+    同构：SSHTarget 静态配置），动态注册的消费者是伴生架构（P1）；P0 工具面
+    machine 参数只做**目标选择**（选择已声明的 machine），注册是配置问题
+  - set_default 保留: 拒绝 — 跟随式默认已覆盖（§4.0），"不够用时再评估"的尾巴
+    也剪掉；真不够用是 P1 多形态验证后的事
+  - policy_*/snapshot_* 留 P1: 拒绝 — 网络策略的消费者是多租户治理（P2），
+    快照轴消费者是多 backend 场景（P2）；单机单用户 P0/P1 用不上，降 P2
+- 决策: ① env_sleep/env_wake 移除（P1 随配额执行器回归，记录在 P1 路线图）；
+  ② +image_list()（image 族 2 工具）；③ machine? 参数回归全部目标选择型签名
+  （shell_exec/shell_new/file_*——P0 = 已声明 machine 的选择器）；④ policy_*/
+  snapshot_*/set_default 全部挪 P2
+- 影响: 工具面 18→17（6 族）；NFR-8 验证阶段改 P2（配额执行器随治理身份）；
+  P0-m3b 的 machine 注册 = sandbox.yaml SSHTarget 声明式配置（抄 Python 版
+  config.py 结构）；AD-008 的"睡眠省时长"承诺顺延至 P1 配额执行器
+- 日期: 2026-11-25 Python 对照终审——特性映射表与豁免条款（v3.20）
 
 - 状态: Accepted
 - 背景: v3.19 只立了搬运原则（代码债便宜就还/架构债等终态），未做全工具面系统
