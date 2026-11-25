@@ -12,7 +12,7 @@
 | 3 | shell_exec 阻塞返回/超时杀组 | P | TestBlockingExec + TestBlockingExecTimeoutKillsProcessGroup | ✅ |
 | 4 | async 立即返回 + 内核收尸 | P | TestAsyncExecHandleLedger（setsid 容器内 pid + 500ms 探活收尸） | ✅ |
 | 5 | file 原子写/编码归一化 | P | TestFileOperations（CRLF→LF 归一化验证；敏感路径警告随 m4 description 承载） | ✅ |
-| 6 | 记忆跨唤醒存续 | U | store/state 测试（m2 已覆盖存储半） | m4 |
+| 6 | 记忆跨唤醒存续 | U | mcpserver_test.TestStateDocRoundtrip（state_get/state_put 单文档往返） | ✅ |
 | 7 | 重启对账收编/标 error/孤儿收编 | U | orchestrator_test.TestReconcile*（幂等二次 no-op 验证） | ✅ |
 | 8 | container_build 路径约束/镜像可作基线 | P | TestContainerBuildAndRecreate（../escape 拒绝验证） | ✅ |
 | 9 | 注册表 name 键控/重复拒绝 | U | store 测试（已绿） | ✅ |
@@ -26,15 +26,33 @@
 | NFR-1 自愈延迟 | <5s | U | TestSelfHealSameNameRecreate（fake 路径逻辑验证；真实镜像缓存计时随 m4 基准） | ✅ 逻辑 |
 | NFR-2 自愈 >99% | >99% | U | TestCreateFailureMarksError（重试一次→无僵尸记录） | ✅ 逻辑 |
 | NFR-3 放行率 100% | =100% | U | policy P0 默认空（规则面 P1，结构存在） | ✅ 结构 |
-| NFR-4 update 接口 =0 | =0 | U | 面 audit（工具/接口枚举断言） | m4 |
+| NFR-4 update 接口 =0 | =0 | U | mcpserver_test.TestToolFaceComplete（17 工具枚举断言，无 update 面） | ✅ |
 | NFR-5 明文密钥 =0 | =0 | U | sqlite 测试（已绿） | ✅ |
-| NFR-6 credential_read =0 | =0 | U | 面 audit | m4 |
+| NFR-6 credential_read =0 | =0 | U | mcpserver_test.TestFaceAuditNFR4And6（面枚举无 credential_read） | ✅ |
 | NFR-7 回溯率 100% | =100% | U | query 覆盖测试（已绿） | ✅ |
 | NFR-8 无饥饿 | P2 | — | MANUAL: 随配额执行器 | P2 |
 | NFR-9 冷启动 p95<10s | <10s | P | TestCreateAndRemove 实测 1.7s（含拉镜像则另计） | ✅ |
-| NFR-10 exec p95<500ms | <500ms | P | 待 m4 基准测试（docker exec 直连路径已定） | m4 |
+| NFR-10 exec p95<500ms | <500ms | P | e2e 冒烟实测 exec 69~102ms（docker exec 直连路径，e2e/smoke.py） | ✅ 实测 |
+
+## 追加场景（m3b ssh 瘦模式 + m4 工具面）
+
+| # | 场景 | 级别 | 测试 | 状态 |
+|---|---|---|---|---|
+| 12 | ssh 连接 + 阻塞 exec | P | remote_test.TestConnectAndExec（loopback sshd @39222 实管道） | ✅ |
+| 13 | ssh exec 超时强杀 | P | remote_test.TestExecTimeout（Cancel+WaitDelay 关管道，不挂死） | ✅ |
+| 14 | ssh SFTP 读写 + 编码归一 | P | remote_test.TestSFTPReadWrite（原子 temp+PosixRename） | ✅ |
+| 15 | ssh 连接自愈（僵尸往返探测） | P | remote_test.TestConnectionSelfHealing（nonce 往返挂死→强拆重建） | ✅ |
+| 16 | ssh 会话上限 | U | remote_test.TestSessionCap（per-machine 上限 4） | ✅ |
+| 17 | ssh 诚实能力面 | U | remote_test.TestHonestCapabilities（瘦模式面不越权宣称） | ✅ |
+| 18 | MCP 面完整性 | U | mcpserver_test.TestToolFaceComplete（17 工具 = 5 族齐全） | ✅ |
+| 19 | 面审计（NFR-4/6） | U | mcpserver_test.TestFaceAuditNFR4And6 | ✅ |
+| 20 | 捎带事件游标（每事件一次） | U | mcpserver_test.TestPiggybackDeliversEachEventOnce | ✅ |
+| 21 | 记忆单文档往返 | U | mcpserver_test.TestStateDocRoundtrip | ✅ |
+| 22 | 事件游标查询 | U | mcpserver_test.TestEventsCursor | ✅ |
+| 23 | 名字→ID 解析（名字是资产地址） | U | orchestrator_test.TestRemoveByName | ✅ |
+| 24 | 端到端 stdio 链路 | P | e2e/smoke.py（17 工具 + create→exec→file×3→status→remove） | ✅ |
 
 ## 未覆盖
 
-- ssh 瘦模式全场景（m3b 落地时补矩阵行）
-- MCP 工具面端到端（m4 落地时补）
+- NFR-8 无饥饿：随配额执行器（P2）
+- P1 能力（machine_connect/disconnect、shell_new 会话语义、镜像构建产物校验）

@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.23 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）
+> 状态：v3.24 — 2026-11-25，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -100,8 +100,11 @@ created → starting → running → stopping → stopped → removing → remov
   sandboxd 重启 ≠ 身体丢失——容器还在 daemon 里跑，注册表有记录，缺的只是桥接。
   启动时对账：SQLite 注册表 × daemon 实际容器逐个比对——① 双方在 → 重新接管
   （重建句柄桥，状态从容器事实校准）；② 注册表有/daemon 无 → 标 error（走唤醒
-  降级链/自愈）；③ daemon 有/注册表无 → 孤儿容器（按命名约定收编或列出待决，
-  不静默删除）。对账是幂等只读 + 必要的状态修正，永不销毁 workdir
+  降级链/自愈）；③ daemon 有/注册表无 → 孤儿容器（**收编须有 workdir 证据**——
+  WorkHome/<name> 存在且非空，不变量即物证；无证据 = 共享 daemon 上的他物，
+  不认领、不删除、只列出待决）。对账是幂等只读 + 必要的状态修正，永不销毁 workdir
+  （v3.24，AD-029：首次实现按"daemon 有即收编"实现，实测把宿主上 15 个无关容器
+  全认领——越权认领他人物品，证据门补上）
 
 ### 3.2 配置（版本化）
 ```
@@ -302,7 +305,7 @@ Claude Desktop）后确认：唯一被普遍消费的通知通道是 `tools/list
 
 | 通道 | 语义 | 游标 |
 |---|---|---|
-| 响应捎带（自动） | 每次工具响应附带 pending events（无则省略字段 = 零开销） | 平台内维护**投递水位**（delivery watermark），Agent 无需传参 |
+| 响应捎带（自动） | 每次工具响应附带 pending events（无则省略字段 = 零开销） | 平台内维护**投递水位**（delivery watermark），Agent 无需传参；语义 = **每事件每会话只投递一次**（已投递的不重放，v3.24，AD-029：v3.17 原表述"附带滞留事件"未定义去重，实测按"最近 N 条"取会重放全部历史） |
 | `events(after_seq)`（手动） | 显式拉取，可回看任意时点 | Agent 自管游标 |
 
 - **水位是连接层状态，不是会话建模**：per-connection 的投递水位由传输事实维护
@@ -411,6 +414,12 @@ docker 沙箱同理（外部交互占比小而已）。
 **revert 之死**：其全部实质承诺已由两个更基础的结构兑现——
 ① **workdir 不变量**（§7.0）：`workdir = f(work_home, env_name)`，名字即地址，
 重建自动回到工作现场；② **注册表 name 键控**：同名 create = 同一身份复活（审计连续）。
+
+**身份记法（v3.24，AD-029）**：资源 ID 统一为 `tenant:exec_env:name`
+（例 `default:exec_env:dev-2`）——**tenant 是控制面的一层，backend 不得另造一层**
+（曾在 backend 造 `local:`、控制面造 `default:`，双份身份 = 注册表查不到 = 撞名）；
+工具层同时接受**裸名字**（`dev-2`）与全 ID，内部统一解析为 canonical ID——
+名字是资产的地址，Agent 手里只有名字。
 剩余差异仅为审计事件类型（`resource_recreated`），不值一个独立工具 + 五步流程 + 补偿链章节。
 
 **自愈流程（Agent 视角两步）**：
@@ -737,9 +746,9 @@ docker:
 |---|---|---|
 | P0-m1 ✅ | 资源模型 + backend 契约 + 快照/策略/审计骨架（纯契约，零死代码） | §2 §10 |
 | P0-m2 ✅ | SQLite 审计 sink + 注册表（name 键控）+ 状态机（含并发仲裁锁）+ 句柄账本 | §3 §6 §13 |
-| P0-m3a | docker×linux backend：container_create(同名自愈)/shell_exec 双模式/file/container_build | §4 §7 §10 |
-| P0-m3b | ssh×linux + ssh×windows（瘦模式最小过渡：配置声明注册/阻塞 exec/file_*（SFTP）/编码层抄） | §4 §10.0 |
-| P0-m4 | sandbox.yaml 配置装配（双路径/DNS 网络）+ MCP server（17 工具） | §4 §13 |
+| P0-m3a ✅ | docker×linux backend：container_create(同名自愈)/shell_exec 双模式/file/container_build | §4 §7 §10 |
+| P0-m3b ✅ | ssh×linux + ssh×windows（瘦模式最小过渡：配置声明注册/阻塞 exec/file_*（SFTP）/编码层抄） | §4 §10.0 |
+| P0-m4 ✅ | sandbox.yaml 配置装配（双路径/DNS 网络）+ MCP server（17 工具） | §4 §13 |
 
 P1：**伴生服务**（替换瘦模式——sandboxd-lite 二进制 + 断线五层 + async/账本在远程启用，
 §10.0——P1 第一个硬仗；覆盖 linux/windows/android 三 OS）+ machine_connect/disconnect
@@ -1354,4 +1363,35 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
 - 影响: §10.0 分级表补"连接自愈 ✅"行；P0-m3b 实现清单 +1（三件套+探测+
   上限）；Python 版对照——三件套直接抄，探活升级，其余（-O check 单一探活）
   为已知缺陷不继承
+- 日期: 2026-11-25
+
+### AD-029: P0 收口——收编所有权证据、捎带游标、身份分层（v3.24）
+
+- 状态: Accepted
+- 背景: P0-m3a/m3b/m4 落地过程中，三处设计含糊被真实管道暴露：
+  ① **收编所有权无判据**——"daemon 有、注册表无"的孤儿一律收编，但宿主 docker
+  daemon 上还有大量与本项目无关的容器（实测 15 个：mysql-server、xray 等），
+  首次对账把它们全收编 = 越权认领他人物品（虽不删除，但污染注册表与身份面）
+  ② **捎带事件无游标**——v3.17 定义"响应捎带身体事件"，实现按"最近 N 条"取，
+  表现为每条响应重放全部历史事件（实测 3 次响应携带同样的 6 条）——事件面
+  变成噪音，且随时间无界增长
+  ③ **身份只有一层**——资源 ID 曾在 backend（"local"）与控制面（"default"）两处
+  各造一个（`local:exec_env:e2e-x` 与 `default:exec_env:e2e-x` 并存），注册表
+  查不到 = 名字解析失效 = 创建撞名；且工具只认全 ID 不认名字（Agent 手里
+  只有名字）
+- 备选方案:
+  - 收编按容器命名约定（sandbox 前缀）: 不够 — 前缀可被绕过/重名，证据弱
+  - 收编按 docker label 标记: 拒绝 — 标签是实现细节不是不变量；且 P0 已有更强证据
+  - **收编按 workdir 证据（WorkHome/<name> 存在且非空）: 采纳** — workdir 不变量
+    本就是"这个身体在此工作过"的物证；无证据 = 他人容器，不认领、不删除
+  - 捎带继续取"最近 N 条": 拒绝 — 重放 = 噪音 + 无界；事件面应像消息队列
+  - **捎带走游标（每事件每会话一次）: 采纳** — 追加序(rowid)作 seq 游标，
+    已投递的不再投递；多客户端扇出待 events.after_seq 暴露（P1）
+  - 身份统一成"名字即地址": 采纳 — 名字是资产的地址（§7.0 已如此定位），
+    工具层接受裸名字或全 ID，内部统一 canonical ID（tenant:exec_env:name）
+- 决策: §3.1 对账补"收编须有 workdir 证据"门；§4.4 捎带小节补游标语义；
+  §2.1 身份记法统一为 tenant:exec_env:name，工具层接受裸名或全 ID
+- 影响: reconcile 的孤儿判定加证据门（宿主他物不再被认领）；捎带事件去重
+  （每事件一次，游标随会话）；创建/移除按名字正常工作；tenant 由配置统一
+  （backend 与控制面必须同 tenant，否则身份分裂）
 - 日期: 2026-11-25
