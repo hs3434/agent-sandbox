@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,6 +96,9 @@ func Open(opts Options) (*Backend, error) {
 }
 
 func (b *Backend) Close() error { return b.cli.Close() }
+
+// Client exposes the docker client (tests and probes only).
+func (b *Backend) Client() *client.Client { return b.cli }
 
 // Capabilities declares what this backend guarantees (platform primitives only).
 func (b *Backend) Capabilities() []resource.Capability {
@@ -614,3 +618,46 @@ func tail(s string, n int) string {
 	}
 	return s[len(s)-n:]
 }
+
+// OpenSession starts a persistent shell inside the container (one exec with
+// AttachStdin) and returns its pipes. The caller frames commands with
+// pkg/shell markers; the session's cwd/exports persist across commands.
+func (b *Backend) OpenSession(ctx context.Context, id resource.ResourceID, shellCmd []string) (io.WriteCloser, io.Reader, func(), error) {
+	if len(shellCmd) == 0 {
+		shellCmd = []string{"/bin/sh"}
+	}
+	execCfg := container.ExecOptions{
+		Cmd:          shellCmd,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+	}
+	attach, err := b.cli.ContainerExecCreate(ctx, b.containerName(id), execCfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("session exec create: %w", err)
+	}
+	resp, err := b.cli.ContainerExecAttach(ctx, attach.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("session exec attach: %w", err)
+	}
+	// docker multiplexes stdout/stderr on one stream when Tty=false — unwrap
+	// so the drain goroutine sees pure payload
+	pr, pw := io.Pipe()
+	go func() {
+		_, _ = stdcopy.StdCopy(pw, pw, resp.Reader)
+		pw.Close()
+	}()
+	stdin := &stdinWriter{conn: resp.Conn}
+	teardown := func() {
+		resp.Close()
+	}
+	return stdin, pr, teardown, nil
+}
+
+// stdinWriter is the exec connection's write half as io.WriteCloser.
+type stdinWriter struct {
+	conn net.Conn
+}
+
+func (w *stdinWriter) Write(p []byte) (int, error) { return w.conn.Write(p) }
+func (w *stdinWriter) Close() error                { return w.conn.Close() }

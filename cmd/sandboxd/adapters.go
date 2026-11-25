@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/hs3434/agent-sandbox/pkg/container"
 	"github.com/hs3434/agent-sandbox/pkg/remote"
 	"github.com/hs3434/agent-sandbox/pkg/resource"
+	"github.com/hs3434/agent-sandbox/pkg/shell"
 )
 
 // remoteMachine adapts one named ssh machine to the exec/file faces the
@@ -49,6 +51,14 @@ func (m remoteMachine) ReadFile(ctx context.Context, id resource.ResourceID, pat
 
 func (m remoteMachine) WriteFile(ctx context.Context, id resource.ResourceID, path, content string) error {
 	return m.be.WriteFile(ctx, m.name, path, content)
+}
+
+// OpenSession starts a persistent remote shell (delegates to the backend;
+// machine name is already resolved by the orchestrator).
+func (m remoteMachine) OpenSession(ctx context.Context, _ resource.ResourceID, shellCmd []string) (io.WriteCloser, io.Reader, func(), error) {
+	// ssh dialect expects the raw shell command; "/bin/sh" works for posix,
+	// the PowerShell line for windows
+	return m.be.OpenSession(ctx, m.name, strings.Join(shellCmd, " "))
 }
 
 // Health reports the real connection state — never a hardcoded "connected"
@@ -92,13 +102,31 @@ func (a orchestratorFaceAdapter) ShellExec(ctx context.Context, opts mcpserver.E
 	return a.o.ShellExec(ctx, opts.Machine, opts.ShellID, opts.Async, opts.Timeout, cmd)
 }
 
-func (a orchestratorFaceAdapter) ShellNew(ctx context.Context, machine, purpose string) (any, error) {
-	return nil, fmt.Errorf("shell_new: sessions land with the MCP face hardening (P0 = stateless exec per call)")
+func (a orchestratorFaceAdapter) ShellNew(ctx context.Context, machine, purpose string) (*mcpserver.ShellInfo, error) {
+	info, err := a.o.ShellNew(ctx, machine, purpose)
+	if err != nil {
+		return nil, err
+	}
+	return sessionToFace(info), nil
 }
 
-func (a orchestratorFaceAdapter) ShellRemove(shellID string) bool { return false }
+func (a orchestratorFaceAdapter) ShellRemove(shellID string) bool {
+	return a.o.ShellRemove(shellID)
+}
 
-func (a orchestratorFaceAdapter) ShellList() []any { return nil }
+func (a orchestratorFaceAdapter) ShellList() []mcpserver.ShellInfo {
+	rows := a.o.ShellList()
+	out := make([]mcpserver.ShellInfo, 0, len(rows))
+	for i := range rows {
+		out = append(out, *sessionToFace(&rows[i]))
+	}
+	return out
+}
+
+func sessionToFace(s *orchestrator.SessionInfo) *mcpserver.ShellInfo {
+	return &mcpserver.ShellInfo{ID: s.ID, Env: s.Env, Dialect: s.Dialect,
+		Purpose: s.Purpose, State: s.State, Created: s.Created}
+}
 
 func (a orchestratorFaceAdapter) FileRead(ctx context.Context, machine, path string) (string, error) {
 	return a.o.FileRead(ctx, machine, path)
@@ -112,8 +140,8 @@ func (a orchestratorFaceAdapter) FilePatch(ctx context.Context, machine, path, o
 	return a.o.FilePatch(ctx, machine, path, oldS, newS, all)
 }
 
-func (a orchestratorFaceAdapter) FileSearch(ctx context.Context, machine, dir, pattern, searchType string) ([]string, error) {
-	return a.o.FileSearch(ctx, machine, dir, pattern, searchType)
+func (a orchestratorFaceAdapter) FileSearch(ctx context.Context, p shell.SearchParams, machine string) (*shell.SearchResult, error) {
+	return a.o.FileSearch(ctx, p, machine)
 }
 
 func (a orchestratorFaceAdapter) Status(ctx context.Context) (map[string]any, error) {

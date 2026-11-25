@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,6 +11,8 @@ import (
 
 	"github.com/hs3434/agent-sandbox/pkg/container"
 	"github.com/hs3434/agent-sandbox/pkg/resource"
+	"github.com/hs3434/agent-sandbox/pkg/shell"
+	"github.com/hs3434/agent-sandbox/pkg/store"
 )
 
 // execFace / fileFace / buildFace are the data-plane contracts the tool face
@@ -49,6 +51,13 @@ func (o *Orchestrator) ShellExec(ctx context.Context, machine, shellID string, a
 	if cmd == "" {
 		return nil, fmt.Errorf("cmd is required")
 	}
+	// session mode: run inside a persistent shell (state persists across calls)
+	if shellID != "" {
+		if async {
+			return nil, fmt.Errorf("session exec is blocking-only (the session itself is the persistence)")
+		}
+		return o.ShellExecInSession(ctx, shellID, cmd, timeoutSecs)
+	}
 	target := machine
 	if target == "" {
 		target = o.defaultEnv() // follow-style default: last dwelling op
@@ -71,6 +80,23 @@ func (o *Orchestrator) ShellExec(ctx context.Context, machine, shellID string, a
 		h, err := af.ExecAsync(ctx, id, cmd)
 		if err != nil {
 			return nil, err
+		}
+		// ledger = the platform's record of what we manage (AD-030): a
+		// running async process is ours the moment it exists. Write-ahead —
+		// if we crash here, the ledger row (created) is the recovery seed.
+		if err := o.store.PutHandle(store.Handle{
+			ID: h.ID, EnvID: h.EnvID, PGID: h.PGID, Cmd: h.Cmd,
+			State:     store.HandleRunning,
+			ExeEnv:    "docker",
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		}); err != nil {
+			return nil, fmt.Errorf("ledger write (write-ahead): %w", err)
+		}
+		ef, isC := be.(interface {
+			SetHandleDeadHook(func(handleID string, exitCode int))
+		})
+		if isC {
+			ef.SetHandleDeadHook(o.markHandleDead)
 		}
 		o.auditEvent(id, "tool_call", "shell_exec async", cmd)
 		return map[string]any{
@@ -144,46 +170,44 @@ func (o *Orchestrator) FilePatch(ctx context.Context, machine, path, oldS, newS 
 	return n, nil
 }
 
-func (o *Orchestrator) FileSearch(ctx context.Context, machine, dir, pattern, searchType string) ([]string, error) {
-	// P0 honest implementation: walk + match via FileRead on small sets.
-	// ripgrep-scale search lands with real demand (AD-004).
-	be, _, err := o.routeFile(machine)
-	if err != nil {
-		return nil, err
+// FileSearch runs ripgrep ON THE TARGET (ported from the Python predecessor):
+// a host-side walk only ever saw the docker workdir and silently missed every
+// remote machine. The target's own rg gives real regex/glob/context semantics
+// on both axes.
+func (o *Orchestrator) FileSearch(ctx context.Context, p shell.SearchParams, machine string) (*shell.SearchResult, error) {
+	if p.Pattern == "" {
+		return nil, fmt.Errorf("pattern is required")
 	}
-	_ = be
-	ff, ok := o.backendFor(o.machineOrDefault(machine)).(fileFace)
+	name := o.machineOrDefault(machine)
+	be := o.backendFor(name)
+	ef, ok := be.(execFace)
 	if !ok {
-		return nil, fmt.Errorf("machine %q does not support files", machine)
+		return nil, fmt.Errorf("machine %q does not support exec", name)
 	}
-	root := dir
-	if root == "" {
-		root = "."
-	}
-	var hits []string
-	// single-file search
-	if strings.Contains(pattern, "*") && searchType == "files" {
-		// glob via ListDir helper is not in the file contract — P0 walks
-		// the workdir host-side (docker) or via shell (ssh)
-		return o.searchGlob(ctx, o.machineOrDefault(machine), root, pattern)
-	}
-	// content search: read + match (bounded workdir)
-	list, err := o.listFiles(ctx, o.machineOrDefault(machine), root)
+	id := o.idFor(name)
+	d := o.dialectFor(name)
+	out, err := shell.Search(ctx, func(ctx context.Context, cmd string) (string, int, error) {
+		r, err := ef.Exec(ctx, id, cmd, container.ExecOptions{Timeout: 60 * time.Second})
+		if err != nil {
+			return "", 0, err
+		}
+		return r.Stdout + r.Stderr, r.ExitCode, nil
+	}, d, p)
 	if err != nil {
 		return nil, err
 	}
-	for _, f := range list {
-		data, err := ff.ReadFile(ctx, o.idFor(o.machineOrDefault(machine)), f)
-		if err != nil {
-			continue
-		}
-		for i, line := range strings.Split(data, "\n") {
-			if strings.Contains(line, pattern) {
-				hits = append(hits, fmt.Sprintf("%s:%d: %s", f, i+1, strings.TrimSpace(line)))
-			}
+	return out, nil
+}
+
+// dialectFor picks the shell dialect of the target's OS.
+func (o *Orchestrator) dialectFor(name string) shell.Dialect {
+	if be, ok := o.backends[name]; ok {
+		if t, ok := be.(interface{ TargetInfo() (string, string) }); ok {
+			_, osType := t.TargetInfo()
+			return shell.DialectFor(osType)
 		}
 	}
-	return hits, nil
+	return shell.PosixDialect{}
 }
 
 // Build delegates to the docker backend (container family — ssh reports
@@ -392,44 +416,142 @@ func (o *Orchestrator) auditEvent(id resource.ResourceID, outcome, action, detai
 	o.emitWithDuration(id, action, detail, 0)
 }
 
-// searchGlob / listFiles: P0 host-side walk for the docker backend (workdir
-// is host-visible via the invariant — the one deterministic bridge).
-func (o *Orchestrator) searchGlob(ctx context.Context, env, root, pattern string) ([]string, error) {
-	base := o.WorkdirFor(env)
-	matches, err := filepath.Glob(filepath.Join(base, root, pattern))
-	if err != nil {
-		return nil, err
+// markHandleDead is the docker backend's death-notification consumer: ledger
+// row flips to dead (explicit-only transition) + audit event so the death
+// reaches agents via piggyback/status.
+func (o *Orchestrator) markHandleDead(handleID string, exitCode int) {
+	reason := fmt.Sprintf("exited (code %d)", exitCode)
+	if err := o.store.MarkHandleDead(handleID, reason); err != nil {
+		// unknown handle = pre-ledger leftover; the fact is still auditable
+		o.auditEvent("", "process_event", "handle dead (unrecorded)", handleID+" "+reason)
+		return
 	}
-	for i, m := range matches {
-		if rel, err := filepath.Rel(base, m); err == nil {
-			matches[i] = rel
-		}
-	}
-	return matches, nil
+	o.auditEvent("", "process_event", "handle dead", handleID+" "+reason)
 }
 
-func (o *Orchestrator) listFiles(ctx context.Context, env, root string) ([]string, error) {
-	base := o.WorkdirFor(env)
-	dir := filepath.Join(base, root)
-	var out []string
-	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return nil // errors on unreadable entries are skipped, not fatal
-		}
-		if info.Size() > 1024*1024 { // skip >1MB files in content search
-			return nil
-		}
-		if rel, rerr := filepath.Rel(base, p); rerr == nil {
-			out = append(out, rel)
-		}
-		return nil
-	})
-	return out, err
-}
+// searchGlob / listFiles: P0 host-side walk for the docker backend (workdir
+// is host-visible via the invariant — the one deterministic bridge).
+
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		return s[:i]
 	}
 	return s
+}
+
+// ---- persistent shell sessions (marker framing, no PTY) ----
+
+// sessionRecord is one live shell session in the registry.
+type sessionRecord struct {
+	s       *shell.Session
+	purpose string
+	created time.Time
+}
+
+// ShellNew opens a persistent shell on the target (default env when no
+// machine is given) and registers it.
+func (o *Orchestrator) ShellNew(ctx context.Context, machine, purpose string) (*SessionInfo, error) {
+	// Sessions must outlive the tool call that created them: the transport
+	// runs on a process-lifetime context, not the request ctx (whose
+	// cancellation would kill the shell the moment shell_new returns).
+	_ = ctx
+	name := o.machineOrDefault(machine)
+	be := o.backendFor(name)
+	d := o.dialectFor(name)
+
+	var stdin io.WriteCloser
+	var stdout io.Reader
+	var teardown func()
+	var err error
+	switch tb := be.(type) {
+	case interface {
+		OpenSession(context.Context, resource.ResourceID, []string) (io.WriteCloser, io.Reader, func(), error)
+	}:
+		stdin, stdout, teardown, err = tb.OpenSession(o.sessCtx, o.idFor(name), d.ShellArgs())
+	case interface {
+		OpenSession(context.Context, string, string) (io.WriteCloser, io.Reader, func(), error)
+	}:
+		stdin, stdout, teardown, err = tb.OpenSession(o.sessCtx, name, strings.Join(d.ShellArgs(), " "))
+	default:
+		return nil, fmt.Errorf("machine %q does not support sessions", name)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	id := fmt.Sprintf("sh-%d", time.Now().UnixNano())
+	s := shell.NewSession(id, name, d, func(b []byte) error { _, werr := stdin.Write(b); return werr }, stdout, teardown)
+	o.mu.Lock()
+	if o.sessions == nil {
+		o.sessions = map[string]*sessionRecord{}
+	}
+	o.sessions[id] = &sessionRecord{s: s, purpose: purpose, created: time.Now()}
+	o.mu.Unlock()
+	return &SessionInfo{ID: id, Env: name, Dialect: d.Name(), Purpose: purpose, State: "ready"}, nil
+}
+
+// SessionInfo is the shell_new / shell_list payload row.
+type SessionInfo struct {
+	ID      string `json:"id"`
+	Env     string `json:"env"`
+	Dialect string `json:"dialect"`
+	Purpose string `json:"purpose,omitempty"`
+	State   string `json:"state"`
+	Created string `json:"created"`
+}
+
+// ShellExecInSession runs one blocking command inside a registered session.
+func (o *Orchestrator) ShellExecInSession(ctx context.Context, shellID, cmd string, timeoutSecs int) (map[string]any, error) {
+	o.mu.Lock()
+	rec := o.sessions[shellID]
+	o.mu.Unlock()
+	if rec == nil {
+		return nil, fmt.Errorf("shell %q not found (shell_list for the inventory)", shellID)
+	}
+	out, code, err := rec.s.Send(cmd, time.Duration(timeoutSecs)*time.Second)
+	res := map[string]any{
+		"shell_id":  shellID,
+		"exit_code": code,
+		"stdout":    out,
+	}
+	if err != nil {
+		res["note"] = err.Error()
+	}
+	return res, nil
+}
+
+// ShellRemove kills and unregisters a session.
+func (o *Orchestrator) ShellRemove(shellID string) bool {
+	o.mu.Lock()
+	rec := o.sessions[shellID]
+	if rec != nil {
+		delete(o.sessions, shellID)
+	}
+	o.mu.Unlock()
+	if rec == nil {
+		return false
+	}
+	rec.s.Close()
+	return true
+}
+
+// ShellList reports the live sessions (registry truth).
+func (o *Orchestrator) ShellList() []SessionInfo {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]SessionInfo, 0, len(o.sessions))
+	for id, rec := range o.sessions {
+		state := rec.s.Health()
+		if rec.s.Busy() {
+			state = "busy"
+		}
+		out = append(out, SessionInfo{
+			ID: id, Env: rec.s.Env, Dialect: rec.s.Dialect.Name(),
+			Purpose: rec.purpose, State: state,
+			Created: rec.created.UTC().Format(time.RFC3339),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }

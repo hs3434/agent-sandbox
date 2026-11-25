@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -379,4 +380,46 @@ func u16le(b []byte) []uint16 {
 		out[i] = binary.LittleEndian.Uint16(b[i*2:])
 	}
 	return out
+}
+
+// OpenSession starts a persistent remote shell (ssh host sh / powershell -)
+// and returns its pipes. Same marker framing contract as the docker path.
+func (b *Backend) OpenSession(ctx context.Context, machine, shellCmd string) (io.WriteCloser, io.Reader, func(), error) {
+	b.mu.Lock()
+	st, ok := b.machines[machine]
+	b.mu.Unlock()
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("machine %q not declared (sandbox.yaml machines)", machine)
+	}
+	if err := b.ensureAlive(st); err != nil {
+		return nil, nil, nil, err
+	}
+	if shellCmd == "" {
+		if st.target.OSType == "windows" {
+			shellCmd = "powershell.exe -NoLogo -NoProfile -Command -"
+		} else {
+			shellCmd = "/bin/sh"
+		}
+	}
+	ecmd := exec.CommandContext(ctx, "ssh", append(b.sshBaseArgs(st), shellCmd)...)
+	ecmd.Cancel = func() error { return ecmd.Process.Kill() }
+	ecmd.WaitDelay = 2 * time.Second
+	stdin, err := ecmd.StdinPipe()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("session stdin: %w", err)
+	}
+	stdout, err := ecmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("session stdout: %w", err)
+	}
+	ecmd.Stderr = ecmd.Stdout // merge: marker framing tolerates either stream
+	if err := ecmd.Start(); err != nil {
+		return nil, nil, nil, fmt.Errorf("session start: %w", err)
+	}
+	teardown := func() {
+		_ = stdin.Close()
+		_ = ecmd.Process.Kill()
+		_ = ecmd.Wait()
+	}
+	return stdin, stdout, teardown, nil
 }

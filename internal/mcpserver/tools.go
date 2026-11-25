@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/hs3434/agent-sandbox/pkg/audit"
+	"github.com/hs3434/agent-sandbox/pkg/shell"
 	"github.com/hs3434/agent-sandbox/pkg/store"
 )
 
@@ -175,7 +176,8 @@ func (s *Server) toolShellList(ctx context.Context, args json.RawMessage) (any, 
 	if s.deps.Orch == nil {
 		return nil, s.backendUnavailable()
 	}
-	return map[string]any{"shells": s.deps.Orch.ShellList()}, nil
+	shells := s.deps.Orch.ShellList()
+	return map[string]any{"shells": shells, "count": len(shells)}, nil
 }
 
 // ---- file family (foraging) ----
@@ -239,12 +241,27 @@ func (s *Server) toolFileSearch(ctx context.Context, args json.RawMessage) (any,
 	if pattern == "" {
 		return nil, fmt.Errorf("pattern is required")
 	}
-	hits, err := s.deps.Orch.FileSearch(ctx, argStr(args, "machine"), argStr(args, "path"),
-		pattern, argStr(args, "search_type"))
+	res, err := s.deps.Orch.FileSearch(ctx, shell.SearchParams{
+		Pattern:    pattern,
+		Path:       argStr(args, "path"),
+		SearchType: argStr(args, "search_type"),
+		FileGlob:   argStr(args, "file_glob"),
+		Limit:      argInt(args, "limit"),
+		Offset:     argInt(args, "offset"),
+		OutputMode: argStr(args, "output_mode"),
+		Context:    argInt(args, "context"),
+	}, argStr(args, "machine"))
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"matches": hits}, nil
+	out := map[string]any{"matches": res.Matches, "type": res.Type, "engine": res.Engine}
+	if res.Diagnostics != "" {
+		out["diagnostics"] = res.Diagnostics
+	}
+	if res.Truncated {
+		out["truncated"] = true
+	}
+	return out, nil
 }
 
 // ---- sense family ----

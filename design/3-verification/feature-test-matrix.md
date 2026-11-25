@@ -57,7 +57,20 @@
 | 29 | 浅查/深查分工 | U | orchestrator_test.TestStatusShapeAndContent（status 无 backend/created/id）+ TestInspectIsTheDeepView（inspect 出处齐全） | ✅ |
 | 24 | 端到端 stdio 链路 | P | e2e/smoke.py（17 工具 + create→exec→file×3→status→remove） | ✅ |
 
+## 追加场景（v3.30 持久会话 + 搜索引擎化）
+
+| # | 场景 | 级别 | 测试 | 状态 |
+|---|---|---|---|---|
+| 30 | marker 分帧（Send 完成 + 退出码回传） | U | shell_test.TestSendBlockingCompletesOnMarker（fake shell，exit 7 透传） | ✅ |
+| 31 | 超时是事实不是悬挂（124 + 会话存活） | U | shell_test.TestSendTimeoutKeepsSessionAlive（超时后 pending 清空、可复用） | ✅ |
+| 32 | 方言命令形状（posix/powershell） | U | shell_test.TestDialectCommandShapes | ✅ |
+| 33 | rg→grep 兜底 + 诊断分离 | U | shell_test.TestSearchFallsBackToGrepWhenRGMissing / TestSearchContentSeparatesDiagnostics 等 7 测 | ✅ |
+| 34 | 会话状态跨调用持久（cd/export） | P | e2e/sess_full.py 步 2（docker：`cd /tmp && export` 后 pwd/echo 命中） | ✅ |
+| 35 | ssh 目标会话 | P | e2e/sess_full.py 步 5（loop@39222：远端输出 + cd 持久，pkg 层 sshsess.go） | ✅ |
+| 36 | 会话生命周期（new/list/remove） | P | e2e/sess_full.py 步 1/4/6/7 | ✅ |
+| 37 | async 句柄账本闭环（write-ahead + 死亡 hook） | P | e2e/async_ledger.py（账本行 running→dead "exited (code 0)"） | ✅ |
+
 ## 未覆盖
 
 - NFR-8 无饥饿：随配额执行器（P2）
-- P1 能力（machine_connect/disconnect、shell_new 会话语义、镜像构建产物校验）
+- P1 能力（machine_connect/disconnect、镜像构建产物校验、远程伴生把账本/async 带去 ssh）

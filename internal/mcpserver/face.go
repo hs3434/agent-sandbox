@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+
+	"github.com/hs3434/agent-sandbox/pkg/shell"
 )
 
 // OrchestratorFace is the composition the tool face drives (lifecycle +
@@ -13,13 +15,13 @@ type OrchestratorFace interface {
 	Build(ctx context.Context, envID, tag, dockerfile string) error
 	ListImages(ctx context.Context) ([]string, error)
 	ShellExec(ctx context.Context, opts ExecOpts, cmd string) (map[string]any, error)
-	ShellNew(ctx context.Context, machine, purpose string) (any, error)
+	ShellNew(ctx context.Context, machine, purpose string) (*ShellInfo, error)
 	ShellRemove(shellID string) bool
-	ShellList() []any
+	ShellList() []ShellInfo
 	FileRead(ctx context.Context, machine, path string) (string, error)
 	FileWrite(ctx context.Context, machine, path, content string) error
 	FilePatch(ctx context.Context, machine, path, oldS, newS string, all bool) (int, error)
-	FileSearch(ctx context.Context, machine, dir, pattern, searchType string) ([]string, error)
+	FileSearch(ctx context.Context, p shell.SearchParams, machine string) (*shell.SearchResult, error)
 	Status(ctx context.Context) (map[string]any, error)
 	Inspect(ctx context.Context, id string) (map[string]any, error)
 	WorkdirFor(name string) string
@@ -39,6 +41,18 @@ type ExecOpts struct {
 	Machine string
 	ShellID string
 	Timeout int // seconds; 0 = contract default
+}
+
+// ShellInfo is the shell_new / shell_list payload row (face-local mirror of
+// the orchestrator's SessionInfo — the adapter converts, the layers stay
+// decoupled).
+type ShellInfo struct {
+	ID      string `json:"id"`
+	Env     string `json:"env"`
+	Dialect string `json:"dialect"`
+	Purpose string `json:"purpose,omitempty"`
+	State   string `json:"state"`
+	Created string `json:"created"`
 }
 
 // ResourceMeta is the self-describing payload crossing the layer boundary.

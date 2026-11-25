@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hs3434/agent-sandbox/pkg/audit"
@@ -47,6 +48,10 @@ type Deps struct {
 // plus named backends (ssh machines from sandbox.yaml, AD-026 selector
 // semantics).
 type Orchestrator struct {
+	mu             sync.Mutex
+	sessions       map[string]*sessionRecord
+	sessCtx        context.Context // lives as long as the process; sessions outlive individual tool calls
+	sessCtxCancel  context.CancelFunc
 	store          *store.Store
 	audit          *audit.Bus
 	backend        lifecycleOps
@@ -77,16 +82,19 @@ func New(deps Deps) (*Orchestrator, error) {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
+	sessCtx, sessCancel := context.WithCancel(context.Background())
 	return &Orchestrator{
-		store:       deps.Store,
-		audit:       deps.Audit,
-		backend:     deps.Backend,
-		backends:    deps.Backends,
-		workHome:    deps.WorkHome,
-		tenant:      deps.Tenant,
-		locks:       resource.NewOrchestrator(),
-		execTimeout: timeout,
-		imageLister: deps.ImageLister,
+		store:         deps.Store,
+		audit:         deps.Audit,
+		backend:       deps.Backend,
+		backends:      deps.Backends,
+		workHome:      deps.WorkHome,
+		tenant:        deps.Tenant,
+		locks:         resource.NewOrchestrator(),
+		execTimeout:   timeout,
+		imageLister:   deps.ImageLister,
+		sessCtx:       sessCtx,
+		sessCtxCancel: sessCancel,
 	}, nil
 }
 

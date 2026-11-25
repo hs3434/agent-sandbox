@@ -29,20 +29,27 @@ AI 操作现实的支点（Go）：给 Agent 一个**身体**（执行环境）�
 ## 目录结构
 
 ```
-cmd/sandboxd/        # 控制面入口（MCP server，P0-m2 接入）
+cmd/sandboxd/        # 组合根：配置装配 + orchestrator 适配 + MCP server
+internal/config/     # sandbox.yaml（machines[kind=docker|ssh] / work_home / 超时）
+internal/orchestrator/  # 控制面门面：write-ahead 创建 / 对账 / 会话注册表 / 状态机
+internal/mcpserver/  # 17 工具 MCP 面（stdio），不 import orchestrator（adapter 缝）
 pkg/resource/        # 资源模型：类型 / capability / 元数据 / 状态常量
 pkg/backend/         # 数据面契约：Backend 接口 + 注册表 + ErrUnsupported
+pkg/container/       # docker backend：生命周期 / 双模式 exec / 持久会话 / async reaper
+pkg/remote/          # ssh backend（瘦模式）：阻塞 exec / SFTP / 持久会话 / ControlMaster 自愈
+pkg/shell/           # 会话引擎：marker 分帧 / 方言（posix|powershell）/ rg→grep 搜索
+pkg/store/           # SQLite：注册表（name 键控）+ 状态文档 + 句柄账本
+pkg/audit/           # 审计：事件记录 + Sink 接口 + Bus（SQLite sink + 游标）
 pkg/snapshot/        # 快照子系统：注册表记录 / scope（env 轴先行，§7.0）
 pkg/policy/          # 策略资源：命令规则 + 默认放行决策（P1 扩展网络/配额）
-pkg/audit/           # 审计：事件记录 + Sink 接口 + Bus（SQLite sink P0-m2）
 docs/design-spec-v3.md  # 参考架构（P0 施工基线，§14 开源核心/平台层边界）
 ```
 
 ## Roadmap
 
-- **P0**：资源模型 + capability + snapshot/revert（标准镜像重建优先 + commit 备选）+ 自动 baseline
-- **P1**：策略资源化（网络边界）+ 凭证注入/回收 + 审计脱敏
-- **P2**：三层身份（tenant/task/session）+ metrics
+- **P0 ✅**：资源模型 + 17 工具 MCP 面（container/shell/file/sense/memory 5 族）+ docker×linux + ssh×linux/windows（瘦模式）+ 持久会话 + 对账自愈 + 句柄账本闭环
+- **P1**：伴生服务（远程 async/账本/断线五层）+ 策略资源化（网络边界）+ machine_connect（条件触发）+ 审计脱敏
+- **P2**：三层身份（tenant/task/session）+ metrics + vm/k8s backend 评估
 
 ## Build
 
