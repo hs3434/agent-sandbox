@@ -108,6 +108,10 @@ func (s *SQLiteSink) Query(q Query) ([]Event, error) {
 		where = append(where, "ts >= ?")
 		args = append(args, q.Since.UTC().Format(time.RFC3339Nano))
 	}
+	if q.AfterSeq > 0 {
+		where = append(where, "rowid > ?")
+		args = append(args, q.AfterSeq)
+	}
 	if !q.Until.IsZero() {
 		where = append(where, "ts <= ?")
 		args = append(args, q.Until.UTC().Format(time.RFC3339Nano))
@@ -118,8 +122,8 @@ func (s *SQLiteSink) Query(q Query) ([]Event, error) {
 	args = append(args, q.Limit)
 
 	rows, err := s.db.Query(
-		`SELECT id, ts, tenant, subject, resource_id, action, outcome, duration_ms, detail, secret_fp
-		 FROM events WHERE `+joinAnd(where)+` ORDER BY ts LIMIT ?`, args...)
+		`SELECT rowid, id, ts, tenant, subject, resource_id, action, outcome, duration_ms, detail, secret_fp
+		 FROM events WHERE `+joinAnd(where)+` ORDER BY rowid LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +132,7 @@ func (s *SQLiteSink) Query(q Query) ([]Event, error) {
 	for rows.Next() {
 		var e Event
 		var ts, rid, outcome string
-		if err := rows.Scan(&e.ID, &ts, &e.Tenant, &e.Subject, &rid, &e.Action,
+		if err := rows.Scan(&e.Seq, &e.ID, &ts, &e.Tenant, &e.Subject, &rid, &e.Action,
 			&outcome, &e.DurationMS, &e.Detail, &e.SecretFingerprint); err != nil {
 			return nil, err
 		}

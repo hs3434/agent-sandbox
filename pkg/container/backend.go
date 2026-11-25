@@ -57,12 +57,14 @@ type Handle struct {
 type Options struct {
 	WorkHome string // host path; workdir = WorkHome/<name> (invariant)
 	Network  string // optional user-defined bridge (DNS network, §13.2)
+	Tenant   string // resource identity tenant (default: "local")
 }
 
 // Backend is the docker data-plane implementation.
 type Backend struct {
 	cli          *client.Client
 	workHome     string
+	tenant       string
 	network      string
 	onHandleDead func(handleID string, exitCode int)
 }
@@ -85,7 +87,11 @@ func Open(opts Options) (*Backend, error) {
 		cli.Close()
 		return nil, fmt.Errorf("work_home mkdir: %w", err)
 	}
-	return &Backend{cli: cli, workHome: opts.WorkHome, network: opts.Network}, nil
+	tenant := opts.Tenant
+	if tenant == "" {
+		tenant = "local"
+	}
+	return &Backend{cli: cli, workHome: opts.WorkHome, network: opts.Network, tenant: tenant}, nil
 }
 
 func (b *Backend) Close() error { return b.cli.Close() }
@@ -162,7 +168,7 @@ func (b *Backend) Create(ctx context.Context, name string, spec resource.ExecEnv
 		return nil, fmt.Errorf("container start: %w", err)
 	}
 	return &resource.Meta{
-		ID:        resource.NewResourceID("local", resource.TypeExecEnv, name),
+		ID:        resource.NewResourceID(b.tenant, resource.TypeExecEnv, name),
 		Type:      resource.TypeExecEnv,
 		Backend:   "docker",
 		Status:    resource.StatusRunning,
@@ -181,6 +187,36 @@ func (b *Backend) ensureImage(ctx context.Context, img string) error {
 	defer rc.Close()
 	io.Copy(io.Discard, rc) // drain; errors surface at first use
 	return nil
+}
+
+// ListNames exposes daemon container names for reconcile (registry × daemon
+// comparison, spec §3.1). Sandbox-managed containers carry the sandboxd label.
+func (b *Backend) ListNames(ctx context.Context) ([]string, error) {
+	list, err := b.cli.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("container list: %w", err)
+	}
+	var out []string
+	for _, c := range list {
+		for _, n := range c.Names {
+			out = append(out, strings.TrimPrefix(n, "/"))
+		}
+	}
+	return out, nil
+}
+
+// ListImages enumerates locally available images (container_images tool —
+// the selection basis for create/build).
+func (b *Backend) ListImages(ctx context.Context) ([]string, error) {
+	list, err := b.cli.ImageList(ctx, image.ListOptions{All: false})
+	if err != nil {
+		return nil, fmt.Errorf("image list: %w", err)
+	}
+	var out []string
+	for _, img := range list {
+		out = append(out, img.RepoTags...)
+	}
+	return out, nil
 }
 
 func (b *Backend) ensureNetwork(ctx context.Context, name string) error {

@@ -91,6 +91,10 @@ func (s *Store) migrate() error {
 			created_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_handles_env ON handles(env_id)`,
+		`CREATE TABLE IF NOT EXISTS state_doc (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			doc TEXT
+		)`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return fmt.Errorf("migrate: %w", err)
@@ -245,4 +249,29 @@ func (s *Store) ListHandles(envID resource.ResourceID) ([]Handle, error) {
 		out = append(out, h)
 	}
 	return out, rows.Err()
+}
+
+// ---- state doc (single-document memory, AD-012) ----
+
+// ErrStateEmpty marks "never written" (blank-slate guidance on state_get).
+var ErrStateEmpty = fmt.Errorf("state doc not written yet")
+
+// GetStateDoc loads the single memory document (ErrStateEmpty if never put).
+func (s *Store) GetStateDoc() ([]byte, error) {
+	var doc sql.NullString
+	err := s.db.QueryRow(`SELECT doc FROM state_doc WHERE id = 1`).Scan(&doc)
+	if err == sql.ErrNoRows || (err == nil && !doc.Valid) {
+		return nil, ErrStateEmpty
+	}
+	if err != nil {
+		return nil, err
+	}
+	return []byte(doc.String), nil
+}
+
+// PutStateDoc replaces the single memory document wholly.
+func (s *Store) PutStateDoc(doc []byte) error {
+	_, err := s.db.Exec(`INSERT INTO state_doc (id, doc) VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET doc = excluded.doc`, string(doc))
+	return err
 }

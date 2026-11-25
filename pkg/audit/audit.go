@@ -31,6 +31,7 @@ const OutcomeOK Outcome = "ok"
 // Event is the canonical audit record.
 type Event struct {
 	ID         string
+	Seq        int64 // storage order (rowid); cursor basis for piggyback/events
 	Timestamp  time.Time
 	Tenant     string
 	Subject    string // operator identity (tenant:task:session)
@@ -72,4 +73,5 @@ type Query struct {
 	Since      time.Time
 	Until      time.Time
 	Limit      int
+	AfterSeq int64 // rowid cursor: deliver only events after this seq (piggyback dedup)
 }

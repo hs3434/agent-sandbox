@@ -1,0 +1,24 @@
+# sandbox.yaml — sandboxd 的声明面（§3.2）。启动即校验，错配置 fail-fast。
+storage:
+  # sandboxd 侧的 work_home 视图；workdir = <work_home>/<env_name>（不变量）
+  work_home: /var/lib/agent-sandbox
+
+docker:
+  # sandboxd 自身容器化部署时，daemon 必须看到的宿主路径（§13.1 双路径）
+  work_home_host: ""
+  # 用户自定义 bridge：容器名即 DNS 名（§13.2）
+  network: sandbox
+  containerized: false
+
+# 机器注册 = 声明式（AD-026：零工具）。ssh 瘦模式 = 阻塞 exec + file_*（SFTP）。
+machines:
+  # build-box:
+  #   host: 10.0.0.21
+  #   port: 22
+  #   user: builder
+  #   key: ~/.ssh/id_ed25519
+  #   os_type: linux
+
+limits:
+  # I6 覆盖链第 1 层：用户配置 > 契约默认（60s）
+  exec_timeout_seconds: 90

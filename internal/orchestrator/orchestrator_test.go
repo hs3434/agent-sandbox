@@ -76,11 +76,12 @@ func (f *fakeBackend) SetWorkHome(dir string) { f.workHome = dir }
 
 // harness wires store+audit+orchestrator with a fake backend.
 type harness struct {
-	t    *testing.T
-	orch *Orchestrator
-	st   *store.Store
-	fb   *fakeBackend
-	bus  *audit.Bus
+	t        *testing.T
+	orch     *Orchestrator
+	st       *store.Store
+	fb       *fakeBackend
+	bus      *audit.Bus
+	workHome string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -111,7 +112,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("orchestrator: %v", err)
 	}
-	return &harness{t: t, orch: orch, st: st, fb: fb, bus: bus}
+	return &harness{t: t, orch: orch, st: st, fb: fb, bus: bus, workHome: workHome}
 }
 
 // fakeAdapter adapts fakeBackend to the backend.Backend interface subset the
@@ -225,9 +226,22 @@ func TestReconcileAdoptsOrphansAndMarksDead(t *testing.T) {
 	h.fb.mu.Lock()
 	delete(h.fb.containers, "lost-1")
 	h.fb.mu.Unlock()
-	// daemon has it but registry doesn't → orphan (adopted, not deleted)
+	// daemon has it but registry doesn't → orphan (adopted, not deleted).
+	// adoption requires workdir evidence (the invariant is the ownership
+	// proof): a daemon container without WorkHome/<name> is foreign and
+	// stays untouched.
 	h.fb.mu.Lock()
 	h.fb.containers["orphan-1"] = true
+	h.fb.mu.Unlock()
+	if err := os.MkdirAll(filepath.Join(h.workHome, "orphan-1"), 0o755); err != nil {
+		t.Fatalf("workdir evidence: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(h.workHome, "orphan-1", "asset"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("workdir evidence: %v", err)
+	}
+	// foreign container (daemon truth, no workdir) → must NOT be adopted
+	h.fb.mu.Lock()
+	h.fb.containers["foreign-1"] = true
 	h.fb.mu.Unlock()
 
 	report, err := h.orch.Reconcile(ctx)
@@ -247,6 +261,14 @@ func TestReconcileAdoptsOrphansAndMarksDead(t *testing.T) {
 	// orphan: adopted into the registry, never silently deleted
 	if len(report.Orphans) != 1 || report.Orphans[0] != "orphan-1" {
 		t.Fatalf("orphans = %v, want [orphan-1]", report.Orphans)
+	}
+	for _, o := range report.Orphans {
+		if o == "foreign-1" {
+			t.Fatal("foreign container adopted — workdir evidence gate failed")
+		}
+	}
+	if foreign, _ := h.st.GetByName("local", resource.TypeExecEnv, "foreign-1"); foreign != nil {
+		t.Fatal("foreign container must stay unregistered")
 	}
 	// after reconcile the orphan is registered (收编)
 	got, _ = h.st.GetByName("local", resource.TypeExecEnv, "orphan-1")
@@ -279,5 +301,24 @@ func TestConcurrentLifecycleConflicts(t *testing.T) {
 	err = h.orch.Remove(context.Background(), "local:exec_env:dev-4", false)
 	if err == nil || !resource.IsConflict(err) {
 		t.Fatalf("want ErrConflict, got %v", err)
+	}
+}
+
+// TestRemoveByName resolves the bare name to the canonical resource id
+// (the name is the address of an asset — agents think in names).
+func TestRemoveByName(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.orch.Create(ctx, CreateOpts{Name: "byname"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := h.orch.Remove(ctx, "byname", false); err != nil {
+		t.Fatalf("remove by name: %v", err)
+	}
+	if m, _ := h.st.GetByName("local", resource.TypeExecEnv, "byname"); m != nil {
+		t.Fatal("registry record must be gone after remove")
+	}
+	if err := h.orch.Remove(ctx, "byname", false); err == nil {
+		t.Fatal("remove of unknown name must fail loudly")
 	}
 }

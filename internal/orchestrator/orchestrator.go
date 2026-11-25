@@ -33,22 +33,30 @@ type lifecycleOps interface {
 
 // Deps wires the orchestrator (composition happens in cmd/sandboxd, I3).
 type Deps struct {
-	Store    *store.Store
-	Audit    *audit.Bus
-	Backend  lifecycleOps
-	WorkHome string
-	Tenant   string
+	Store       *store.Store
+	Audit       *audit.Bus
+	Backend     lifecycleOps
+	Backends    map[string]any // named machines (ssh) — target selectors, AD-026
+	WorkHome    string
+	Tenant      string
+	ExecTimeout time.Duration         // user-configurable (I6 layer 1)
+	ImageLister func() ([]string, error) // docker images (container_images tool)
 }
 
-// Orchestrator is the control-plane composition over one backend (P0 single-
-// backend form; multi-backend routing lands with ssh in m3b).
+// Orchestrator is the control-plane composition: one default backend (docker)
+// plus named backends (ssh machines from sandbox.yaml, AD-026 selector
+// semantics).
 type Orchestrator struct {
-	store    *store.Store
-	audit    *audit.Bus
-	backend  lifecycleOps
-	workHome string
-	tenant   string
-	locks    *resource.Orchestrator
+	store          *store.Store
+	audit          *audit.Bus
+	backend        lifecycleOps
+	backends       map[string]any // machine name -> backend (ssh machines)
+	workHome       string
+	tenant         string
+	locks          *resource.Orchestrator
+	defaultEnvName string              // follow-style default (dwelling ops switch)
+	execTimeout    time.Duration       // I6: config override ?: 60s contract default
+	imageLister    func() ([]string, error) // docker image enumeration (nil = unsupported)
 }
 
 // New validates deps and returns the composed orchestrator.
@@ -65,13 +73,20 @@ func New(deps Deps) (*Orchestrator, error) {
 	if err := os.MkdirAll(deps.WorkHome, 0o755); err != nil {
 		return nil, fmt.Errorf("work_home mkdir: %w", err)
 	}
+	timeout := deps.ExecTimeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
 	return &Orchestrator{
-		store:    deps.Store,
-		audit:    deps.Audit,
-		backend:  deps.Backend,
-		workHome: deps.WorkHome,
-		tenant:   deps.Tenant,
-		locks:    resource.NewOrchestrator(),
+		store:       deps.Store,
+		audit:       deps.Audit,
+		backend:     deps.Backend,
+		backends:    deps.Backends,
+		workHome:    deps.WorkHome,
+		tenant:      deps.Tenant,
+		locks:       resource.NewOrchestrator(),
+		execTimeout: timeout,
+		imageLister: deps.ImageLister,
 	}, nil
 }
 
@@ -148,10 +163,30 @@ func (o *Orchestrator) Create(ctx context.Context, opts CreateOpts) (*resource.M
 	return meta, nil
 }
 
+// ResolveID accepts either a full resource id ("tenant:exec_env:name") or a
+// bare name ("name") and returns the canonical id. The name is the address
+// of an asset (spec §7.0) — agents think in names.
+func (o *Orchestrator) ResolveID(id string) (resource.ResourceID, error) {
+	if id == "" {
+		return "", fmt.Errorf("empty resource id")
+	}
+	if strings.Contains(id, ":") {
+		return resource.ResourceID(id), nil
+	}
+	m, err := o.store.GetByName(o.tenant, resource.TypeExecEnv, id)
+	if err != nil {
+		return "", fmt.Errorf("resource %q not found", id)
+	}
+	return m.ID, nil
+}
+
 // Remove deletes the container; workdir survives unless purge (the name is
 // the address of an asset, not the instance's attribute).
 func (o *Orchestrator) Remove(ctx context.Context, id string, purge bool) error {
-	rid := resource.ResourceID(id)
+	rid, err := o.ResolveID(id)
+	if err != nil {
+		return err
+	}
 	release, lockErr := o.locks.Acquire(rid, "remove")
 	if lockErr != nil {
 		return lockErr
@@ -228,11 +263,15 @@ func (o *Orchestrator) Reconcile(ctx context.Context) (*ReconcileReport, error) 
 		}
 	}
 
-	// daemon-only: orphans — adopt by naming convention (P0: every daemon
-	// container in work_home shape is ours), never silently delete
+	// daemon-only: orphans — adopt by workdir evidence (the invariant is the
+	// ownership proof: WorkHome/<name> must exist). Foreign containers on a
+	// shared daemon are NOT ours; never silently delete anything.
 	for name := range daemon {
 		if _, err := o.store.GetByName(o.tenant, resource.TypeExecEnv, name); err == nil {
 			continue // already registered
+		}
+		if ents, err := os.ReadDir(filepath.Join(o.workHome, name)); err != nil || len(ents) == 0 {
+			continue // no workdir evidence → foreign container, leave untouched
 		}
 		meta := &resource.Meta{
 			ID:        resource.NewResourceID(o.tenant, resource.TypeExecEnv, name),
