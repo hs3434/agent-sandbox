@@ -17,7 +17,7 @@
 ## 0. 第一性：AI 操作现实的支点
 
 本项目的意义 = 作为 **AI 操作现实的支点**。给 AI 一个**身体**（执行环境——可存在、
-可操作、可自愈）和**手**（操作原语——shell/file/exec/snapshot），让 AI 像人一样在
+可操作、可自愈）和**手**（操作原语——shell/file/container），让 AI 像人一样在
 各平台开发、操作系统。
 
 - **支点**：AI 作用于现实的着力点。支点本身不多做，但它让 AI 的能力有了施展之处
@@ -200,7 +200,7 @@ Agent 自建凭证（userland，AD-013），平台审计不承诺脱敏
 - **维护**：Agent 自己读、自己写——记任务上下文、哪些进程应该在跑、下一步计划；
   这是唤醒后自我定位的依据
 - **边界：自叙记忆 ≠ 治理真相**。文档可以记错、可以过时；治理真相在 status / 审计
-  事件流 / `env/inspect` 实时查询。平台不校验文档内容（否则它就成了第二个需要审计
+  事件流 / `resource_inspect` 实时查询。平台不校验文档内容（否则它就成了第二个需要审计
   的对象）
 - **秘密卫生（诚实条款）**：文档是明文存储且平台不校验——引导警告"勿存秘密"；
   凭证走注入/回收通道，不走记忆通道（次要优先级但一致性要保）
@@ -290,7 +290,7 @@ Claude Desktop）后确认：唯一被普遍消费的通知通道是 `tools/list
 - **与错误内嵌指引互补**：description 负责"事前习惯"（主动拉），错误 hint 负责
   "事中发现"（v3.14 L3 立即失败错误已内嵌 reconnect 指引）——两面合成完整感知路径
 - **模型依从性诚实条款**：description 指引不保证 100% 依从（instruction following
-  中等敏感）——它提高拉取概率但不担保；可靠性兜底仍是 L3 立即失败 + wait 阻塞语义，
+  中等敏感）——它提高拉取概率但不担保；可靠性兜底仍是 L3 立即失败 + shell_exec 阻塞语义（等待即感知），
   指引是增强不是依赖
 - **token 成本边界**：只在 4 类状态敏感工具加一行（约 +40 tokens/工具面），不全量
   加（11 工具全加 = 行为与上下文双重浪费）
@@ -315,9 +315,9 @@ Claude Desktop）后确认：唯一被普遍消费的通知通道是 `tools/list
 - **打扰权不变**：仍是拉模式变体——拉取时机由 Agent 的调用节奏决定（它选择何时
   调工具），平台只是把"响应"这个必然存在的事实变厚了一点；Agent 不看就不占额外
   轮次，看了就即时知晓
-- **三通道合成的感知栈**：捎带（必然、即时、零成本）→ wait 阻塞（长操作等待中）→
-  events 回看（任意时点）→ description 指引（主动习惯）。可靠性不再依赖任何单一
-  通道的依从性
+- **三通道合成的感知栈**：捎带（必然、即时、零成本）→ shell_exec 阻塞返回（等待即感知，
+  结果或超时确定送达）→ events 回看（任意时点）→ description 指引（主动习惯）。
+  可靠性不再依赖任何单一通道的依从性
 
 ## 5. 权限与策略模型
 
@@ -416,7 +416,7 @@ docker 沙箱同理（外部交互占比小而已）。
 **自愈流程（Agent 视角两步）**：
 
 ```
-1. resource_remove("dev-2")        （或它已处于 error 态）
+1. container_remove("dev-2")       （或它已处于 error 态）
 2. container_create(name="dev-2", image=<版本>)   —— 同名！
    → workdir 自动 = work_home/dev-2/   （不变量保证，目录还在原地）
    → 身份延续（键控）、审计标记 resource_recreated（自愈语义）
@@ -624,7 +624,7 @@ Agent 体验：从"不断尝试开新 powershell 试错"变为"status 瞥一眼 
 | Backend | capabilities | snapshot 实现 | 隔离级别 | 适用 |
 |---|---|---|---|---|
 | docker | shell/files/snapshot | wake 续用 + 标准镜像重建（commit 快照 P1 评估） | 容器（共享内核） | 默认：开发/执行，秒级启停 |
-| ssh | shell/files（伴生模式，见 §10.0） | 无（诚实声明） | 无（复用既有主机） | 接入既有物理机/远程开发机；瘦模式仅作 bootstrap |
+| ssh | shell/files（P0 瘦模式 / P1 伴生，见 §10.0） | 无（诚实声明） | 无（复用既有主机） | 接入既有物理机/远程开发机；瘦模式 = P0 过渡绳索 |
 | vm (future) | shell/files/snapshot | libvirt/qemu 外部快照（VM 级 CoW）或存储层快照（qcow2 内部快照/切片） | 硬件级虚拟化（独立内核） | 需要内核隔离/不同 OS/系统级实验（内核模块、网络栈、多发行版矩阵） |
 | k8s (future) | shell/files/snapshot | Pod 重建 + PVC 快照 | 容器编排（多节点） | 平台托管形态：多节点调度、PVC 原生两轴快照 |
 
@@ -736,10 +736,10 @@ docker:
 | 里程碑 | 内容 | 对应章节 |
 |---|---|---|
 | P0-m1 ✅ | 资源模型 + backend 契约 + 快照/策略/审计骨架（纯契约，零死代码） | §2 §10 |
-| P0-m2 | SQLite 审计 sink + 注册表（name 键控）+ 状态机（含并发仲裁锁）+ 句柄账本 | §3 §6 §13 |
+| P0-m2 ✅ | SQLite 审计 sink + 注册表（name 键控）+ 状态机（含并发仲裁锁）+ 句柄账本 | §3 §6 §13 |
 | P0-m3a | docker×linux backend：container_create(同名自愈)/shell_exec 双模式/file/container_build | §4 §7 §10 |
 | P0-m3b | ssh×linux + ssh×windows（瘦模式最小过渡：配置声明注册/阻塞 exec/file_*（SFTP）/编码层抄） | §4 §10.0 |
-| P0-m4 | sandbox.yaml 配置装配（双路径/DNS 网络）+ MCP server（7 工具） | §4 §13 |
+| P0-m4 | sandbox.yaml 配置装配（双路径/DNS 网络）+ MCP server（17 工具） | §4 §13 |
 
 P1：**伴生服务**（替换瘦模式——sandboxd-lite 二进制 + 断线五层 + async/账本在远程启用，
 §10.0——P1 第一个硬仗；覆盖 linux/windows/android 三 OS）+ machine_connect/disconnect
@@ -801,6 +801,8 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   - workdir 无快照、只靠 git: 拒绝 — 非代码内容（数据集/输出）无 git，且 git 不是平台责任
 - 决策: env 与 workdir 两个正交恢复轴，各有独立快照流与保留策略；env revert 重挂原 workdir 卷
 - 影响: 引入 scope: env|workdir|full；保留策略分层（env N=5 / workdir N=20 / full N=2）；恢复边界 = 本地态（外部副作用不可恢复，走审计）
+  （**后随 v3.7/v3.13 演化**：env 轴 commit 快照暂缓、baseline=镜像引用、full 成对结构
+  上不可能已砍——正交性保留，"各有独立快照流"收缩为 workdir 单轴 P1）
 - 日期: 2026-11-20
 
 ### AD-003: capability = 平台原语，非软件清单（含 browser 删除）
@@ -823,6 +825,8 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   - 文档即预留（spec 记录设计、代码随需实现）: 采纳
 - 决策: 接缝设计只保留在 spec（§14.1），平台层动工时按表引入代码接缝
 - 影响: **文档与代码存在有意漂移** —— 状态机（spec 8 态 vs 代码 3 态）、事件类型（12 类 vs 2 类）、快照 scope（3 种 vs 仅 env）—— 是「spec 为完整设计、代码为 P0 最小实现」的有意偏差，非缺陷；由本节统一声明，不逐处另立 AD
+  （**漂移随实现收敛**：状态机 8 态已随 P0-m2 落地，事件类型随 m2 落地 4 类——
+  漂移是过程不是常态，代码追上声明即消项）
 - 日期: 2026-11-23
 
 ### AD-005: open-core 边界（开源核心 + 私有平台层）
@@ -1265,7 +1269,9 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   P0-m3b 的 machine 注册 = sandbox.yaml SSHTarget 声明式配置（抄 Python 版
   config.py 结构）；AD-008 的"睡眠省时长"承诺顺延至 P1 配额执行器；
   §4.3 status 返回清单增补 machines 维度；P1 路线图 machine_list 划除
-- 日期: 2026-11-25 Python 对照终审——特性映射表与豁免条款（v3.20）
+- 日期: 2026-11-25
+
+### AD-025: Python 对照终审——特性映射表与豁免条款（v3.20）
 
 - 状态: Accepted
 - 背景: v3.19 只立了搬运原则（代码债便宜就还/架构债等终态），未做全工具面系统
@@ -1291,4 +1297,61 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   m3b 实现清单增补（编码层照旧）
 - 影响: §3.1（对账条款）、§4.0.1（sudo 注记）、§10.0（分级表补 3 行）；
   Python 前身的设计遗产至此全部清算完毕——该抄的有名有份，不抄的有档有据
+- 日期: 2026-11-25
+
+### AD-027: 族重排——docker 专属面归位 + 被操作物命名（v3.22）
+
+- 状态: Accepted（Renames AD-022 之 env_create；supersedes AD-025 之 companion
+  远程操控预留）
+- 背景: 实质检验发现 lifecycle 族名撒谎——env_create/resource_remove/image_build/
+  image_list 四工具**只有 docker backend 有消费者**（ssh 机器是配置声明的事实，
+  无生命周期；瘦模式只有 shell+SFTP 碰不到远端 docker）；workdir 不变量与同名
+  自愈（AD-021）本是 bind-mount 语义，ssh 机器上结构性不存在。另发现 AD-025
+  "companion 可在远端操控 docker"的预留是伪需求——那本质是"在远程 shell 里跑
+  docker 命令"，userland 正路，工具门彻底关死
+- 备选方案:
+  - 保留 lifecycle 族 + capability 声明挡 ssh: 拒绝 — 机制正确但族名继续撒谎，
+    Agent 看到"lifecycle"以为对一切 env 生效
+  - docker_create/docker_remove（backend 名进 API）: 拒绝 — P1 docker×windows、
+    P2 vm/k8s 出现时要再改名；backend 是实现细节不是心智模型
+  - **container_* 以被操作物命名: 采纳** — Agent 心智"我在操作一个容器"，
+    vm/k8s 将来造的也是容器语义的实例，名字不撒谎；list→images 因宾语是镜像清单
+  - resource_inspect 留 lifecycle: 拒绝 — 它对 ssh machine 同样有意义（深查
+    os_type/编码/连接状态），是真正的通吃者；归入 sense 族（全景/回放/单查，
+    只读观察同类，探取型不切默认）
+- 决策: ① 四 docker 专属工具重组为 **container 族**（container_create/remove/
+  build/images）；ssh machine 上调用返回 ErrUnsupported（capability 未声明——
+  pkg/backend 机制现成，面终于诚实）；② resource_inspect 并入 sense 族
+  （sense 2→3，lifecycle 族消亡）；③ AD-025 的 companion 远程操控预留撤销
+  （远程 docker 走 shell 命令，平台不造门）；④ 工具名 resource_ 前缀旧账
+  维持 AD-022"类型分化时再定"
+- 影响: 工具面 17 工具/6 族→**17 工具/5 族**；全文引用替换（§4/§7.2/§7.4/
+  §10.0/P0-m3a）；AD-022/026 的命名记录加演化注记；schema 面 Agent 首次
+  见到即自解释——container_ 前缀 = 容器操作，无歧义
+- 日期: 2026-11-25
+
+### AD-028: ssh 连接自愈——僵尸往返探测（v3.23）
+
+- 状态: Accepted
+- 背景: P0 ssh 瘦模式的连接恢复机制此前是空洞（断线五层全标"等伴生"，
+  分级表无连接行）——SSH 一断操作报错，Agent 只能试错。Python 版已有成熟方案
+  （ControlMaster 三件套 + `_ensure_alive` 惰性重建，代码债便宜就还范畴），
+  但其探活用 `ssh -O check`，存在盲区：check 只证 socket 文件活着，**僵尸 master**
+  （网络半开连接/sshd 半死/Windows conhost 会话泄漏拖坏 server 侧）check 通过
+  但新 channel 打开挂死——用户实测确认此症状真实存在，Python 版无解
+- 备选方案:
+  - 只抄 Python 版（-O check 探活）: 不够 — 僵尸 master 盲区原样继承
+  - 主动心跳线程（L1 提前实现）: 拒绝 — 架构债（断线五层是伴生协议的一部分），
+    提前造 = 伴生来了重造；且心跳解决的是"发现断线"，不解决"master 半死"
+  - **往返探测（echo nonce + 超时）+ 强拆重建: 采纳** — 真实往返证 master 可用，
+    挂死即 -O exit 强拆 + socket 清理 + 全新重建；重建仍失败标 disconnected
+  - 会话并发无上限: 拒绝 — Windows OpenSSH conhost 清理 bug 会进程树堆积
+    （症状像"socket 污染"：新会话全挂），上限（默认 4）是便宜的护栏
+- 决策: §10.0.1 新小节——ControlMaster 三件套（复用/探活/显式重连）+ 往返探测
+  加固 + 会话卫生（PowerShell -File - 无 PTY 模式、console 状态隔离是 ssh 协议
+  原生、并发上限、硬超时）；边界诚实条款：这是连接层自愈非断线五层（无 L1 心跳/
+  L4 解耦，重连惰性），五层仍等伴生
+- 影响: §10.0 分级表补"连接自愈 ✅"行；P0-m3b 实现清单 +1（三件套+探测+
+  上限）；Python 版对照——三件套直接抄，探活升级，其余（-O check 单一探活）
+  为已知缺陷不继承
 - 日期: 2026-11-25
