@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.19 — 2026-11-24，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵
+> 状态：v3.20 — 2026-11-25，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -94,6 +94,12 @@ created → starting → running → stopping → stopped → removing → remov
 - **并发仲裁（P0 必需）**：每个 exec_env 持有编排层互斥锁——同一时刻只允许一个生命周期
   迁移或自愈重建在途；第二个操作立即拒绝（409 conflict，非排队）。自愈重建（remove +
   同名 create）视为一个临界区。锁随 removed 释放；error 状态持有锁直到显式重建
+- **控制面重启对账（reconcile，v3.20——继承 sandbox-mcp _reattach_existing）**：
+  sandboxd 重启 ≠ 身体丢失——容器还在 daemon 里跑，注册表有记录，缺的只是桥接。
+  启动时对账：SQLite 注册表 × daemon 实际容器逐个比对——① 双方在 → 重新接管
+  （重建句柄桥，状态从容器事实校准）；② 注册表有/daemon 无 → 标 error（走唤醒
+  降级链/自愈）；③ daemon 有/注册表无 → 孤儿容器（按命名约定收编或列出待决，
+  不静默删除）。对账是幂等只读 + 必要的状态修正，永不销毁 workdir
 
 ### 3.2 配置（版本化）
 ```
@@ -111,31 +117,59 @@ injected → active → recycled（任务结束）/ expired（超时兜底）
 
 ## 4. 控制面工具清单（MCP）
 
-**P0（7 个，全部有真实消费者；description 直接写全使用说明——工具面已薄到无需渐进发现，env 元工具出局 AD-023）**：
+**P0（18 个工具 / 7 个族，全部有真实消费者；description 直接写全使用说明——工具面
+已薄到无需渐进发现，env 元工具出局 AD-023。machine 参数 P0 全线不设——单机形态无
+消费者，AD-024；P1 ssh 出现时随 connect 族一起设计）**：
 
-env_create(name, {image?, purpose?})              —— 造身体/同名自愈（见 §7.2）
-resource_inspect(id?)                             —— 单资源深查（缺省=默认 env）
-resource_remove(id?, {purge?=false})              —— 移除（默认保留 workdir，purge 才删）
-image_build(tag, {dockerfile?, machine?})         —— 声明→标准镜像（见 §7.4）
-shell_exec(cmd, {shell_id?, machine?, timeout?=60, async?=false})   —— 双模式执行（见 §4.2）
-shell_new / shell_remove / shell_list             —— 会话管理（复用 cd/venv 状态用）
-file_read / file_write / file_patch / file_search —— 结构化文件操作（探取型）
-state_get() / state_put(doc)                      —— 记忆文档（单文档无键，见 §4.1）
-status()                                          —— 本体感觉快照（见 §4.3）
-events(after_seq)                                 —— 事件流回放（见 §4.4）
+**lifecycle 族（5）**——身体的一生：
+env_create(name, {image?, tags?})                  —— 造身体/同名自愈（见 §7.2）
+env_sleep(id?)                                     —— 睡眠 = graceful stop（容器保留，§3.1）
+env_wake(id?)                                      —— 唤醒 = start 续用（非重建，进程不复活）
+resource_inspect(id?)                              —— 单资源深查（缺省 = 默认 env）
+resource_remove(id?, {purge?=false})               —— 移除（默认保留 workdir，purge 才删）
+
+**image 族（1）**：
+image_build(tag, {dockerfile?})                    —— 声明→标准镜像（见 §7.4）
+
+**shell 族（4）**：
+shell_exec(cmd, {shell_id?, timeout?=60, async?=false})   —— 双模式执行（见 §4.2）
+shell_new / shell_remove / shell_list              —— 会话管理（复用 cd/venv 状态用）
+
+**file 族（4，探取型）**：
+file_read / file_write / file_patch / file_search  —— 结构化文件操作（原子写 + 编码归一化 + 敏感路径警告）
+
+**memory 族（2）**：
+state_get() / state_put(doc)                       —— 记忆文档（单文档无键，见 §4.1）
+
+**sense 族（2）**：
+status()                                           —— 本体感觉快照（见 §4.3）
+events(after_seq)                                  —— 事件流回放（见 §4.4）
 
 **P1**：policy_set / policy_get / policy_versions（网络策略）；snapshot_*（workdir 轴，§7.1）；
-set_default（如跟随式默认不够用）；伴生服务模式（替换 ssh 瘦模式）
+set_default（如跟随式默认不够用）；machine_connect 族 + machine 参数回归（远程形态）；
+伴生服务模式（替换 ssh 瘦模式）
 **P2**：credential_inject / credential_recycle（无 read，见 §9）；metrics；vm/k8s backend
 
 ### 4.0 跟随式默认（走到哪，停到哪）
 
 ```
-切换（驻留型）：env_create / shell_exec / shell_new（显式带 machine/env 参数时）
-不切（探取型）：file_* 全族、resource_inspect——拿一下东西不算换工作台
+切换（驻留型）：env_create / env_wake / shell_exec / shell_new
+不切（探取型）：file_* 全族、resource_inspect、env_sleep——拿一下东西/睡一觉不算换工作台
 初始：首个 env_create；确认：status.default（唯一确认源）
-省略 machine/env 参数 = 打默认
-description 注明规则与漂移性（"默认 = 你最后一次 shell 操作的机器，status 可确认"）
+省略 id/env 参数 = 打默认
+description 注明规则与漂移性（"默认 = 你最后一次驻留操作的环境，status 可确认"）
+```
+
+### 4.0.1 sudo/提权注记（v3.20，AD-020 的用户侧兑现）
+
+ssh 场景提权不依赖 PTY 交互（Python 版从未解决 PTY 答 prompt，Windows UAC 根本不可
+PTY 驱动）——shell_exec description 携带指引：
+
+```
+需要 stdin 的程序用管道预先喂：echo 'PW' | sudo -S apt install foo
+多次提权先缓存凭证：echo 'PW' | sudo -S -v && sudo cmd1 && sudo cmd2
+（sudo timestamp 默认 15min）管道来自 bash 内建，不进 ps 明文；密码属
+Agent 自建凭证（userland，AD-013），平台审计不承诺脱敏
 ```
 
 ### 4.1 自状态文档（Agent 的记忆，AD-008）
@@ -175,7 +209,8 @@ description 注明规则与漂移性（"默认 = 你最后一次 shell 操作的
 **只读聚合，零新状态**：从注册表/句柄表/策略引擎实时计算，无独立存储、无写路径。
 
 返回：实例内全部 env 清单（各自生命周期/backend）、进程句柄 alive/dead、可用 capability、
-网络位置（内网|外网）、凭证在场元数据（非值）。
+网络位置（内网|外网）、凭证在场元数据（非值）、**default**（当前默认 env，跟随式默认
+的唯一确认源，§4.0）。
 
 - 与 §4.1 分工：**status = 本体感觉（永远真，平台算）**，**state doc = 记忆（可过时，
   Agent 写）**——status 是 state doc 的活体校准源
@@ -290,7 +325,8 @@ Claude Desktop）后确认：唯一被普遍消费的通知通道是 `tools/list
 
 事件模型：{id, ts, tenant, subject, resource_id, action, outcome, duration_ms, detail(脱敏)}
 类型（按引入阶段分组，勿预建无消费者的事件类型）：
-- P0：tool_call / resource_created / **resource_recreated**（自愈语义标记）/ error
+- P0：tool_call / resource_created / **resource_recreated**（自愈语义标记）/
+  resource_removed / error
 - P1：snapshot_created / snapshot_restored / policy_change / policy_blocked
 - P2：network_decision / credential_injected / credential_recycled（file_op 归入
   tool_call 的 detail，不单列——文件操作经 shell/file 工具即 tool_call）
@@ -411,8 +447,8 @@ docker 沙箱同理（外部交互占比小而已）。
 image_build 产物，§7.3"标准镜像由 Dockerfile 版本管"由此有了执行机制。
 
 ```
-image_build(tag, {dockerfile?="Dockerfile", machine?})
-  路径解析：dockerfile 相对（默认或 machine 的）workdir
+image_build(tag, {dockerfile?="Dockerfile"})
+  路径解析：dockerfile 相对默认 env 的 workdir
   约束：解析结果 ⊆ workdir —— 物理事实（daemon 只见 bind-mount，
         overlay 无稳定路径翻译），非任意限制
   拒绝 inline content —— Dockerfile 必须是 workdir 里的文件（可审计）
@@ -519,7 +555,10 @@ class Backend(ABC):
 | connect + shell_exec 阻塞 | ✅ | 唯一核心承诺（Linux bash PTY / Windows PowerShell） |
 | file_* | ✅ 完整 | 走 SFTP 子系统——字节流无编码问题 |
 | **编码适配（代码页探测/GBK）** | ✅ **直接抄** | Python 版已有（encoding_utils + powershell_provider 语义）——代码债便宜就还 |
+| **原子写 + UTF-8 LF no BOM 归一化 + 敏感路径警告** | ✅ **直接抄** | file_operations.py + safety.py 语义——纯函数孤立易移植，docker/ssh 两 backend 通用 |
+| **sudo 提权** | ✅ 管道模式 | `echo PW \| sudo -S`（§4.0.1）——非交互，不依赖 PTY 答 prompt（Python 版也从未解决它） |
 | async=true | ❌ 报错"unsupported, use companion (P1)" | 进程账本/收尸是架构缺口（无伴生无内核收尸），非代码量问题 |
+| image_build | ❌ P1 伴生 | 需 daemon 可见宿主路径 + 构建流式回传——瘦模式只有 shell 透传，等终态 |
 | 进程账本/断线五层 | ❌ | 架构债，必须等终态 |
 
 **搬运原则：代码债便宜就还（孤立函数，伴生来了直接删）；架构债必须等终态**
@@ -612,7 +651,7 @@ docker:
 - **容器名即主机名**：Agent 在 dev-2 里 `curl http://build-1:8000` 直接通，零配置发现
 - **不开宿主端口映射**（继承 Python 版立场：暴露宿主端口会破坏沙箱网络隔离）——
   env 间访问走容器网络；port_expose 接缝（P1）另有评估
-- 文件跨 env 传输：小文件走 file_*（跨 machine 参数），大文件走 DNS 网络 +
+- 文件跨 env 传输：小文件走 file_*（指明目标 env 路径），大文件走 DNS 网络 +
   userland 传输（`http.server` + `curl`）——**不设共享目录机制**（backend 专属 +
   shell 可代 + 双路径税，AD-023 否决；admin god-mode 容器同批否决）
 
@@ -1097,7 +1136,8 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
 
 ### AD-023: 否决批——share 共享目录、admin god-mode、env 元工具（v3.19）
 
-- 状态: Accepted
+- 状态: Accepted（env 元工具部分被 AD-024 部分取代：help/渐进发现否决维持，
+  lifecycle 动词以专用工具回归）
 - 背景: Python 对照轮收获的三个候选机制逐一拷问：① 共享目录（ro 全棵 + rw overlay）
   精巧但 backend 专属（bind-mount 到 ssh/vm 不存在）+ DNS 网络下 shell 可代
   （http.server + curl）+ 容器化部署再收一份双路径税；② admin /host 全局视图
@@ -1115,3 +1155,57 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   原子写 + SFTP + 编码层 + DNS 网络 + 显式 tag 防碰撞（commit P1 回归时）——
   其余（share/admin/渐进发现/瘦客户端终态）全部否决且有档
 - 日期: 2026-11-24
+
+### AD-024: 生命周期动词回归 + machine 参数退场（v3.20）
+
+- 状态: Accepted（Partially supersedes AD-023）
+- 背景: scheme 复审发现两处结构缺陷。① AD-008 承诺"睡眠/唤醒由 Agent 自主决定"，
+  但工具面只有 create/remove——Agent 无任何工具触达 stopped↔running 迁移（NFR-8
+  "睡眠不烧执行时长"是空头支票）；AD-023 埋 env 元工具时把 action 调度和 help 用途
+  一刀切陪葬了。② shell_exec/image_build 带 machine? 参数，但 P0 单机形态下所有
+  env 都在本机 daemon——参数无消费者（AD-004 违规），且 machine 概念全文 11 处
+  出现却从无定义，connect 工具也不存在
+- 备选方案:
+  - env(action=sleep|wake) 元工具回归: 拒绝 — AD-023 否决的是元工具形态，不是动词；
+    sleep/wake 直呼其名与身体隐喻一致（create/sleep/wake/remove 四动词完整一生）
+  - 只加 env_sleep/wake 其一: 拒绝 — 睡眠无唤醒 = 单程电梯，AD-008 双向自主缺一半
+  - machine? 保留占位: 拒绝 — 无消费者的参数是 schema 噪音 + 幽灵语义；
+    P1 ssh 落地时随 connect 族一起设计，届时参数有真实语义（machine = 连接目标）
+  - write_stdin 三件套复活（sudo 场景触发）: 拒绝 — sudo 是已知时点 stdin，
+    管道（echo PW | sudo -S）精确解决；三件套的独特价值是未知时点中途交互，
+    那类程序对 Agent 是反模式且 Windows UAC 连 PTY 都驱动不了（Python 版从未解决）
+- 决策: ① +env_sleep/env_wake（lifecycle 族 5 工具）；② 全部签名删 machine?
+  （P1 随 connect 族回归）；③ §4.0 跟随式默认两维拆分——P0 默认维度只有 env
+  （workdir 可多开，§4.1），machine 维度 P1；④ §4.0.1 sudo 管道注记进
+  shell_exec description
+- 影响: 工具面 16→18（7 族不变）；NFR-8 有了触达路径；跟随式默认的"驻留型"
+  增补 env_wake（唤醒 = 换工作台），env_sleep 是探取型（睡觉不换台）
+- 日期: 2026-11-25
+
+### AD-025: Python 对照终审——特性映射表与豁免条款（v3.20）
+
+- 状态: Accepted
+- 背景: v3.19 只立了搬运原则（代码债便宜就还/架构债等终态），未做全工具面系统
+  盘点。本轮逐项对照 sandbox-mcp 13 工具 + 14 底层特性，补齐判定存档
+- 判定（抄）:
+  - **控制面重启对账**（_reattach_existing + list_managed_containers 语义）:
+    sandboxd 重启 ≠ 身体丢失——容器在跑、注册表有记录、缺的是桥接。启动时
+    注册表 × daemon 实际容器比对（收编/标 error/孤儿列出不静默删）——§3.1 新条款
+  - **原子写 + 编码归一化**（temp+mv、UTF-8 LF no BOM、BOM/GBK 四级检测、
+    写后语法检查）: file_* 族底层，docker/ssh 两 backend 通用——m3a 即抄
+  - **敏感路径警告**（safety.py denylist，advisory 不阻断）: file_write 返回带
+    warning 字段，纯函数孤立易移植——m3a 即抄
+  - **sudo 管道注记**（§4.0.1）: 零代码，description 携带
+- 判定（不抄，有档）:
+  - shell_read/wait=false 三件套: v3.18 死刑维持；**豁免条款**——若 P1 伴生工作
+    中出现真实的未知时点交互消费者（非 sudo/非 REPL），三件套作为整体回归评估，
+    以 Python 版为参考实现。防止将来重新考古
+  - audit_query: Agent 消费面已有 events(after_seq)；人直接 sqlite3 读库。
+    P1 复盘工具化时再评估（AD-004）
+  - commit/logs/diff/history/stats: P1 评估/P2 metrics（观察干预归 shell）
+  - write_stdin 单独搬运: 三件套的原子部分，见 AD-024
+- 决策: 判定表存档于本 AD；m3a 实现清单增补（原子写/归一化/敏感路径）；
+  m3b 实现清单增补（编码层照旧）
+- 影响: §3.1（对账条款）、§4.0.1（sudo 注记）、§10.0（分级表补 3 行）；
+  Python 前身的设计遗产至此全部清算完毕——该抄的有名有份，不抄的有档有据
+- 日期: 2026-11-25
