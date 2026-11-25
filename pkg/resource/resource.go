@@ -77,6 +77,7 @@ type Meta struct {
 	Tags         map[string]string
 	Owner        string // task/session that created it
 	CreatedAt    time.Time
+	Image        string // exec_env: the image this body was created from (spec)
 }
 
 // ExecEnvSpec is the create-time specification for an exec_env resource.

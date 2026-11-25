@@ -198,7 +198,10 @@ func (o *Orchestrator) ListImages(ctx context.Context) ([]string, error) {
 	return imgs, nil
 }
 
-// Status is the full-body read (§4.3): envs + handles + machines + default.
+// Status is the full-body read (§4.3): what the registry knows about every
+// body we manage, plus the machines we can reach and the current default.
+// The registry row is the truth: id/name/image/backend/status/workdir/age —
+// no probing, no guessing.
 func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 	envs := []map[string]any{}
 	records, err := o.store.ListResources(resource.TypeExecEnv)
@@ -206,9 +209,20 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	for _, m := range records {
-		envs = append(envs, map[string]any{
-			"id": string(m.ID), "status": m.Status, "backend": m.Backend,
-		})
+		name := lastSeg(string(m.ID))
+		row := map[string]any{
+			"id":       string(m.ID),
+			"name":     name,
+			"status":   string(m.Status),
+			"backend":  m.Backend,
+			"workdir":  o.WorkdirFor(name),
+			"created":  m.CreatedAt.UTC().Format(time.RFC3339),
+			"image":    m.Image,
+		}
+		if len(m.Tags) > 0 {
+			row["tags"] = m.Tags
+		}
+		envs = append(envs, row)
 	}
 	machines := []map[string]any{}
 	for name, be := range o.backends {
@@ -218,6 +232,9 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 		}
 		machines = append(machines, map[string]any{"name": name, "state": st})
 	}
+	sort.Slice(machines, func(i, j int) bool {
+		return machines[i]["name"].(string) < machines[j]["name"].(string)
+	})
 	return map[string]any{
 		"envs": envs, "machines": machines,
 		"default": o.defaultEnv(),

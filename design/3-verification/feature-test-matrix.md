@@ -13,7 +13,7 @@
 | 4 | async 立即返回 + 内核收尸 | P | TestAsyncExecHandleLedger（setsid 容器内 pid + 500ms 探活收尸） | ✅ |
 | 5 | file 原子写/编码归一化 | P | TestFileOperations（CRLF→LF 归一化验证；敏感路径警告随 m4 description 承载） | ✅ |
 | 6 | 记忆跨唤醒存续 | U | mcpserver_test.TestStateDocRoundtrip（state_get/state_put 单文档往返） | ✅ |
-| 7 | 重启对账收编/标 error/孤儿收编 | U | orchestrator_test.TestReconcile*（幂等二次 no-op 验证） | ✅ |
+| 7 | 重启对账：校准/标 error/他物不认领 | U | orchestrator_test.TestReconcileConfirmsOursAndMarksDead（daemon-only = unmanaged，幂等二次 no-op） | ✅ |
 | 8 | container_build 路径约束/镜像可作基线 | P | TestContainerBuildAndRecreate（../escape 拒绝验证） | ✅ |
 | 9 | 注册表 name 键控/重复拒绝 | U | store 测试（已绿） | ✅ |
 | 10 | 状态机迁移表/幂等/仲裁锁 | U | lifecycle 测试（已绿） | ✅ |
@@ -50,6 +50,8 @@
 | 21 | 记忆单文档往返 | U | mcpserver_test.TestStateDocRoundtrip | ✅ |
 | 22 | 事件游标查询 | U | mcpserver_test.TestEventsCursor | ✅ |
 | 23 | 名字→ID 解析（名字是资产地址） | U | orchestrator_test.TestRemoveByName | ✅ |
+| 25 | 创建写前意图（先落库再建容器） | U | orchestrator_test.TestCreateWritesIntentBeforeBody（镜像进库，status 可答） | ✅ |
+| 26 | 失败创建留 error 行 | U | orchestrator_test.TestCreateFailureLeavesErrorRow（自愈两步法的既决条件） | ✅ |
 | 24 | 端到端 stdio 链路 | P | e2e/smoke.py（17 工具 + create→exec→file×3→status→remove） | ✅ |
 
 ## 未覆盖

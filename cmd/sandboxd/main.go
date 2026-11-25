@@ -99,8 +99,8 @@ func main() {
 	if err != nil {
 		log.Printf("reconcile: %v (continuing; orphan handling is advisory)", err)
 	} else {
-		log.Printf("reconcile: adopted=%d markedError=%d orphans=%v",
-			report.Adopted, report.MarkedError, report.Orphans)
+		log.Printf("reconcile: ours=%d corrected=%d markedError=%d unmanaged=%d (not ours — untouched)",
+			report.Ours, report.Adopted, report.MarkedError, len(report.Unmanaged))
 	}
 
 	// MCP face

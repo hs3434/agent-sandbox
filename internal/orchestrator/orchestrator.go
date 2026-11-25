@@ -141,18 +141,41 @@ func (o *Orchestrator) Create(ctx context.Context, opts CreateOpts) (*resource.M
 
 	spec := resource.ExecEnvSpec{Image: image, Tags: opts.Tags}
 	start := time.Now()
+
+	// write-ahead intent: the registry row lands BEFORE the container does.
+	// The database is the single record of what we manage — a crash between
+	// intent and action leaves a row we own (reconcile completes or marks it
+	// error), never an unclaimed daemon container to guess about.
+	if existing != nil {
+		if err := o.store.UpdateStatus(existing.ID, resource.StatusCreated); err != nil {
+			return nil, err
+		}
+	} else {
+		intent := &resource.Meta{
+			ID: id, Type: resource.TypeExecEnv, Backend: o.backendName(),
+			Status: resource.StatusCreated, Tags: opts.Tags, Image: image,
+			CreatedAt: time.Now(),
+		}
+		if err := o.store.PutResource(intent); err != nil {
+			return nil, err
+		}
+	}
+
 	meta, err := o.backend.Create(ctx, opts.Name, spec)
 	if err != nil {
-		// one retry (NFR-2 compensating path); still failing = report error,
-		// no zombie registry record
+		// one retry (NFR-2 compensating path); still failing = error state
 		meta, err = o.backend.Create(ctx, opts.Name, spec)
 		if err != nil {
+			_ = o.store.UpdateStatus(id, resource.StatusError)
 			o.emit(id, "error", "create_failed", err.Error())
 			return nil, fmt.Errorf("create (after retry): %w", err)
 		}
 	}
+	// identity is the control plane's: the backend never mints its own layer
+	meta.ID = id
 	meta.Tags = opts.Tags
-	if err := o.store.PutResource(meta); err != nil {
+	meta.Image = image
+	if err := o.store.UpdateStatus(id, resource.StatusRunning); err != nil {
 		return nil, err
 	}
 	action := "resource_created"
@@ -161,6 +184,15 @@ func (o *Orchestrator) Create(ctx context.Context, opts CreateOpts) (*resource.M
 	}
 	o.emitWithDuration(id, action, "", time.Since(start))
 	return meta, nil
+}
+
+// backendName labels the default route's backend (registry rows need a
+// backend label; named ssh machines are labeled by their own adapter).
+func (o *Orchestrator) backendName() string {
+	if n, ok := o.backend.(interface{ BackendName() string }); ok {
+		return n.BackendName()
+	}
+	return "docker"
 }
 
 // ResolveID accepts either a full resource id ("tenant:exec_env:name") or a
@@ -211,9 +243,10 @@ func (o *Orchestrator) Remove(ctx context.Context, id string, purge bool) error 
 
 // ReconcileReport summarizes one startup reconciliation pass (spec §3.1).
 type ReconcileReport struct {
-	Adopted      int      // registry ∩ daemon → re-adopted
-	MarkedError  int      // registry-only → error (wake downgrade chain)
-	Orphans      []string // daemon-only → adopted into registry, never deleted
+	Ours        int      // registry ∩ daemon → bodies we own that exist
+	Adopted     int      // registry ∩ daemon → status corrected (stale/created → running)
+	MarkedError int      // registry-only → error (wake downgrade chain)
+	Unmanaged   []string // daemon-only → NOT ours (registry is the authority): reported, never claimed
 }
 
 // Lister is the daemon-truth dependency for reconcile.
@@ -245,8 +278,9 @@ func (o *Orchestrator) Reconcile(ctx context.Context) (*ReconcileReport, error) 
 	for _, m := range records {
 		name := lastSeg(string(m.ID))
 		if daemon[name] {
-			// healthy record already in sync: not an adoption action
-			// (idempotence — second pass must be a no-op)
+			// our body exists: in sync = nothing to do (idempotence — the
+			// second pass must be a no-op); stale or half-created = correct
+			report.Ours++
 			if m.Status != resource.StatusRunning {
 				_ = o.store.UpdateStatus(m.ID, resource.StatusRunning)
 				report.Adopted++
@@ -263,28 +297,15 @@ func (o *Orchestrator) Reconcile(ctx context.Context) (*ReconcileReport, error) 
 		}
 	}
 
-	// daemon-only: orphans — adopt by workdir evidence (the invariant is the
-	// ownership proof: WorkHome/<name> must exist). Foreign containers on a
-	// shared daemon are NOT ours; never silently delete anything.
+	// daemon-only: NOT ours. The registry is the single record of what we
+	// manage (every body we make lands there before it exists), so a daemon
+	// container without a row belongs to someone else — on a shared daemon
+	// that is the common case. Report, never claim, never delete.
 	for name := range daemon {
 		if _, err := o.store.GetByName(o.tenant, resource.TypeExecEnv, name); err == nil {
-			continue // already registered
+			continue // already registered — ours
 		}
-		if ents, err := os.ReadDir(filepath.Join(o.workHome, name)); err != nil || len(ents) == 0 {
-			continue // no workdir evidence → foreign container, leave untouched
-		}
-		meta := &resource.Meta{
-			ID:        resource.NewResourceID(o.tenant, resource.TypeExecEnv, name),
-			Type:      resource.TypeExecEnv,
-			Backend:   "docker",
-			Status:    resource.StatusRunning,
-			CreatedAt: time.Now(),
-		}
-		if err := o.store.PutResource(meta); err != nil && !store.IsExists(err) {
-			return report, err
-		}
-		report.Orphans = append(report.Orphans, name)
-		o.emit(meta.ID, "resource_created", "reconcile_orphan_adopted", name)
+		report.Unmanaged = append(report.Unmanaged, name)
 	}
 	return report, nil
 }

@@ -213,33 +213,22 @@ func TestCreateFailureMarksError(t *testing.T) {
 	}
 }
 
-func TestReconcileAdoptsOrphansAndMarksDead(t *testing.T) {
+func TestReconcileConfirmsOursAndMarksDead(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	// registered AND daemon has it → adopt if status needs correction
+	// registered AND daemon has it → confirm (intent completed / status fixed)
 	h.orch.Create(ctx, CreateOpts{Name: "alive-1"})
-	// simulate a stale record (e.g. sandboxd crashed mid-stop): registry says
-	// stopped, daemon says running → reconcile corrects to running (= adopt)
+	// simulate a stale record (sandboxd crashed mid-stop): registry says
+	// stopped, daemon says running → reconcile corrects to running
 	h.st.UpdateStatus(resource.NewResourceID("local", resource.TypeExecEnv, "alive-1"), resource.StatusStopped)
 	// registered but daemon lost it → error
 	h.orch.Create(ctx, CreateOpts{Name: "lost-1"})
 	h.fb.mu.Lock()
 	delete(h.fb.containers, "lost-1")
 	h.fb.mu.Unlock()
-	// daemon has it but registry doesn't → orphan (adopted, not deleted).
-	// adoption requires workdir evidence (the invariant is the ownership
-	// proof): a daemon container without WorkHome/<name> is foreign and
-	// stays untouched.
-	h.fb.mu.Lock()
-	h.fb.containers["orphan-1"] = true
-	h.fb.mu.Unlock()
-	if err := os.MkdirAll(filepath.Join(h.workHome, "orphan-1"), 0o755); err != nil {
-		t.Fatalf("workdir evidence: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(h.workHome, "orphan-1", "asset"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("workdir evidence: %v", err)
-	}
-	// foreign container (daemon truth, no workdir) → must NOT be adopted
+	// daemon has it but the registry doesn't → NOT ours. The registry is the
+	// single record of what we manage; a container we never recorded belongs
+	// to someone else (shared daemon). Reported, never claimed, never deleted.
 	h.fb.mu.Lock()
 	h.fb.containers["foreign-1"] = true
 	h.fb.mu.Unlock()
@@ -258,30 +247,63 @@ func TestReconcileAdoptsOrphansAndMarksDead(t *testing.T) {
 	if got.Status != resource.StatusError {
 		t.Fatalf("lost-1 status = %s, want error", got.Status)
 	}
-	// orphan: adopted into the registry, never silently deleted
-	if len(report.Orphans) != 1 || report.Orphans[0] != "orphan-1" {
-		t.Fatalf("orphans = %v, want [orphan-1]", report.Orphans)
-	}
-	for _, o := range report.Orphans {
-		if o == "foreign-1" {
-			t.Fatal("foreign container adopted — workdir evidence gate failed")
-		}
+	if len(report.Unmanaged) != 1 || report.Unmanaged[0] != "foreign-1" {
+		t.Fatalf("unmanaged = %v, want [foreign-1]", report.Unmanaged)
 	}
 	if foreign, _ := h.st.GetByName("local", resource.TypeExecEnv, "foreign-1"); foreign != nil {
-		t.Fatal("foreign container must stay unregistered")
+		t.Fatal("foreign container must stay unregistered — the registry is the authority")
 	}
-	// after reconcile the orphan is registered (收编)
-	got, _ = h.st.GetByName("local", resource.TypeExecEnv, "orphan-1")
-	if got == nil {
-		t.Fatal("orphan must be adopted into registry, not left unregistered")
+	h.fb.mu.Lock()
+	stillThere := h.fb.containers["foreign-1"]
+	h.fb.mu.Unlock()
+	if !stillThere {
+		t.Fatal("foreign container must not be deleted")
 	}
 	// idempotent: second reconcile is a no-op
 	report2, err := h.orch.Reconcile(ctx)
 	if err != nil {
 		t.Fatalf("reconcile2: %v", err)
 	}
-	if report2.Adopted != 0 || report2.MarkedError != 0 || len(report2.Orphans) != 0 {
+	if report2.Adopted != 0 || report2.MarkedError != 0 {
 		t.Fatalf("second reconcile not idempotent: %+v", report2)
+	}
+}
+
+// TestCreateWritesIntentBeforeBody: the registry row lands before the
+// container exists — a crash in between leaves a row we own (never an
+// unclaimed daemon container).
+func TestCreateWritesIntentBeforeBody(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.orch.Create(ctx, CreateOpts{Name: "intent-1", Image: "alpine:3"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	m, err := h.st.GetByName("local", resource.TypeExecEnv, "intent-1")
+	if err != nil || m == nil {
+		t.Fatalf("registry row missing: %v", err)
+	}
+	if m.Status != resource.StatusRunning {
+		t.Fatalf("status = %s, want running", m.Status)
+	}
+	if m.Image != "alpine:3" {
+		t.Fatalf("image = %q, want alpine:3 (the DB records what the body is)", m.Image)
+	}
+}
+
+// TestCreateFailureLeavesErrorRow: a failed create leaves an error row (the
+// two-step self-heal precondition), never a running record.
+func TestCreateFailureLeavesErrorRow(t *testing.T) {
+	h := newHarness(t)
+	h.fb.failCreate = true
+	if _, err := h.orch.Create(context.Background(), CreateOpts{Name: "dev-3"}); err == nil {
+		t.Fatal("want error from failing backend")
+	}
+	m, _ := h.st.GetByName("local", resource.TypeExecEnv, "dev-3")
+	if m == nil {
+		t.Fatal("failed create must leave an error row (self-heal precondition)")
+	}
+	if m.Status != resource.StatusError {
+		t.Fatalf("status = %s, want error", m.Status)
 	}
 }
 

@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.24 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）
+> 状态：v3.25 — 2026-11-25，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -100,11 +100,12 @@ created → starting → running → stopping → stopped → removing → remov
   sandboxd 重启 ≠ 身体丢失——容器还在 daemon 里跑，注册表有记录，缺的只是桥接。
   启动时对账：SQLite 注册表 × daemon 实际容器逐个比对——① 双方在 → 重新接管
   （重建句柄桥，状态从容器事实校准）；② 注册表有/daemon 无 → 标 error（走唤醒
-  降级链/自愈）；③ daemon 有/注册表无 → 孤儿容器（**收编须有 workdir 证据**——
-  WorkHome/<name> 存在且非空，不变量即物证；无证据 = 共享 daemon 上的他物，
-  不认领、不删除、只列出待决）。对账是幂等只读 + 必要的状态修正，永不销毁 workdir
-  （v3.24，AD-029：首次实现按"daemon 有即收编"实现，实测把宿主上 15 个无关容器
-  全认领——越权认领他人物品，证据门补上）
+  降级链/自愈）；③ daemon 有/注册表无 → **不是我们的**（注册表是我们管什么的唯一
+  记录：创建时先写意图再落容器，中间崩溃留下的是我们的行，不是无主的容器；
+  无行的 daemon 容器 = 共享 daemon 上的他物，只报告、不认领、不删除）。
+  对账是幂等只读 + 必要的状态修正，永不销毁 workdir
+  （v3.25，AD-030：**取消收编**——v3.24 的 workdir 证据门是补丁（仍需"猜"谁是我们的），
+  用户裁示"数据库记了就完事"：注册表是权威，收编机制整体退役）
 
 ### 3.2 配置（版本化）
 ```
@@ -1394,4 +1395,31 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
 - 影响: reconcile 的孤儿判定加证据门（宿主他物不再被认领）；捎带事件去重
   （每事件一次，游标随会话）；创建/移除按名字正常工作；tenant 由配置统一
   （backend 与控制面必须同 tenant，否则身份分裂）
+- 日期: 2026-11-25
+
+### AD-030: 所有权归位——数据库是唯一记录，取消收编（v3.25）
+
+- 状态: Accepted（**取代 AD-029 的 workdir 证据门**）
+- 背景: v3.24 为"孤儿收编"补了 workdir 证据门（WorkHome/<name> 存在且非空
+  才认领）——但这仍是**猜测所有权**：得靠目录存在与否反推容器是谁的。用户裁示：
+  "mcpserver 有本地 sqlite，由它管理的容器直接在数据库记录就行了，这样也省去
+  了识别 workdir 的工作"。换言之：**注册表是"我们管什么"的唯一记录**，不需要
+  从 workdir 二次推断。
+  真正的问题在写入顺序：原实现是"先建容器，后写注册表"，崩在中间 = 无主容器
+  （daemon 有、注册表无），才逼出收编机制。正确解法是**写前意图（write-ahead）**：
+  先落注册表行（created 态），再建容器，成功转 running、失败转 error——
+  崩溃窗口留下的是**我们的行**（对账时认领或标 error），永远不产生无主容器。
+- 备选方案:
+  - 保留 workdir 证据门收编: 拒绝 — 仍需猜；且目录可被外部创建，证据不唯一
+  - 给容器打 label 再按 label 收编: 拒绝 — 实现细节不是不变量；且标签可被外部仿冒
+  - **写前意图 + 注册表权威（daemon-only = 他物）: 采纳** — 不需要识别 workdir；
+    对账退化为"注册表 ∩ daemon 校准"，daemon-only 只报告
+  - daemon-only 直接删除: 拒绝 — 他人物品，永不删
+- 决策: §3.1 对账条款重写（取消收编）；创建路径改为 write-ahead（意图先落库）；
+  注册表行扩字段（镜像进 spec 列）；status 全量从注册表回答（不探测不猜测）
+- 影响: ① reconcile 报告字段 = ours / corrected / markedError / unmanaged，
+  unmanaged 列出但从不认领；② 失败创建留下 error 行（自愈两步法的既决条件，
+  比"无记录"更贴语义）；③ status 增列 image/workdir/created/name/tags；
+  ④ workdir 不变量退回到**纯粹路径语义**（workdir = work_home/<name>），
+  不再承担所有权判定职责
 - 日期: 2026-11-25

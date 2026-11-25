@@ -115,11 +115,15 @@ func (s *Store) PutResource(m *resource.Meta) error {
 	if err != nil {
 		return err
 	}
+	spec, err := encodeSpec(m)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.Exec(
 		`INSERT INTO resources (id, type, name, tenant, backend, status, spec, tags, owner, created_at)
 		 VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		string(m.ID), string(m.Type), name, tenant, m.Backend, string(m.Status),
-		"", tags, m.Owner, m.CreatedAt.UTC().Format(timeRFC3339))
+		spec, tags, m.Owner, m.CreatedAt.UTC().Format(timeRFC3339))
 	if isUniqueViolation(err) {
 		return &ErrExists{ID: m.ID}
 	}
@@ -129,7 +133,7 @@ func (s *Store) PutResource(m *resource.Meta) error {
 // GetResource loads by canonical ID.
 func (s *Store) GetResource(id resource.ResourceID) (*resource.Meta, error) {
 	row := s.db.QueryRow(
-		`SELECT id, type, backend, status, tags, owner, created_at
+		`SELECT id, type, backend, status, tags, owner, created_at, spec
 		 FROM resources WHERE id = ?`, string(id))
 	return scanResource(row)
 }
@@ -138,7 +142,7 @@ func (s *Store) GetResource(id resource.ResourceID) (*resource.Meta, error) {
 // (same name = same resource revived, AD-021).
 func (s *Store) GetByName(tenant string, typ resource.Type, name string) (*resource.Meta, error) {
 	row := s.db.QueryRow(
-		`SELECT id, type, backend, status, tags, owner, created_at
+		`SELECT id, type, backend, status, tags, owner, created_at, spec
 		 FROM resources WHERE tenant = ? AND type = ? AND name = ?`,
 		tenant, string(typ), name)
 	return scanResource(row)
@@ -160,7 +164,7 @@ func (s *Store) UpdateStatus(id resource.ResourceID, status resource.Status) err
 // ListResources returns all resources of a type.
 func (s *Store) ListResources(typ resource.Type) ([]*resource.Meta, error) {
 	rows, err := s.db.Query(
-		`SELECT id, type, backend, status, tags, owner, created_at
+		`SELECT id, type, backend, status, tags, owner, created_at, spec
 		 FROM resources WHERE type = ? ORDER BY created_at`, string(typ))
 	if err != nil {
 		return nil, err

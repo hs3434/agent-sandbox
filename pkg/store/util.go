@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -56,10 +57,11 @@ func scanResource(row scanner) (*resource.Meta, error) { return scanInto(row) }
 
 func scanInto(sc scanner) (*resource.Meta, error) {
 	var m resource.Meta
-	var id, typ, status, tags, createdAt string
-	if err := sc.Scan(&id, &typ, &m.Backend, &status, &tags, &m.Owner, &createdAt); err != nil {
+	var id, typ, status, tags, createdAt, spec string
+	if err := sc.Scan(&id, &typ, &m.Backend, &status, &tags, &m.Owner, &createdAt, &spec); err != nil {
 		return nil, err
 	}
+	m.Image = decodeSpecImage(spec)
 	m.ID = resource.ResourceID(id)
 	m.Type = resource.Type(typ)
 	m.Status = resource.Status(status)
@@ -68,6 +70,33 @@ func scanInto(sc scanner) (*resource.Meta, error) {
 		m.CreatedAt = t
 	}
 	return &m, nil
+}
+
+// encodeSpec persists the create-time spec (the DB is the record of what we
+// manage — image included).
+func encodeSpec(m *resource.Meta) (string, error) {
+	if m.Image == "" {
+		return "", nil
+	}
+	b, err := json.Marshal(map[string]string{"image": m.Image})
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// decodeSpecImage reads the image back out of the persisted spec.
+func decodeSpecImage(spec string) string {
+	if spec == "" {
+		return ""
+	}
+	var s struct {
+		Image string `json:"image"`
+	}
+	if err := json.Unmarshal([]byte(spec), &s); err != nil {
+		return ""
+	}
+	return s.Image
 }
 
 // isUniqueViolation detects the driver's constraint error without importing
