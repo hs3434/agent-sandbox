@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.25 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）
+> 状态：v3.26 — 2026-11-25，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）；v3.26 status 结构分层：集合用按名键控 map、`default` 是指针不是同级清单、网络地址入面（env 的 IP/DNS + machine 的 host:port）、machine 状态取真值（不再写死 connected）（AD-031）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -216,11 +216,27 @@ Agent 自建凭证（userland，AD-013），平台审计不承诺脱敏
 
 **只读聚合，零新状态**：从注册表/句柄表/策略引擎实时计算，无独立存储、无写路径。
 
-返回：实例内全部 env 清单（各自生命周期/backend）、进程句柄 alive/dead、可用 capability、
-网络位置（内网|外网）、凭证在场元数据（非值）、**default**（当前默认 env，跟随式默认
-的唯一确认源，§4.0）、**machines**（已声明机器清单及连接状态
-connected/disconnected/reconnecting——machine_list 不设专门工具，status 全景已含，
-v3.21 AD-026）。
+返回：**结构分层**（v3.26，AD-031）——集合与指针不同层：
+
+```
+{
+  "envs":    { "<name>": { id, status, backend, image, workdir, created, tags?, network{name,ip,dns} } },
+  "machines":{ "<name>": { state, address, os } },
+  "default": "<name>",          // 指针：envs 里某一项的名字，不是第三张清单
+  "_events": [ ... ]            // 捎带（游标去重）
+}
+```
+
+- **集合 = 按名键控 map**：envs / machines 各自的键就是资产地址（名字）——Agent 按名
+  直取，不必扫数组；类型上（object）即与 `default`（标量指针）区分开，不再是"三张
+  平级清单"
+- **指针单值**：`default` 只指向 envs 中的一项（跟随式默认的唯一确认源，§4.0）
+- **网络地址**：env 行带 `network{name,ip,dns}`（docker bridge 上的地址，容器名即
+  DNS 名，§13.2）；machine 行带 `address`（host:port）+ `os`
+- **状态诚实**：machine 的 `state` 取真实连接态（connected/disconnected/
+  reconnecting），连接失败不得报 connected
+- 其余事实（进程句柄 alive/dead、capability、凭证在场元数据（非值）、网络位置
+  内网|外网）随实现逐项入面；machines 不设专门工具（v3.21 AD-026）——status 全景已含
 
 - 与 §4.1 分工：**status = 本体感觉（永远真，平台算）**，**state doc = 记忆（可过时，
   Agent 写）**——status 是 state doc 的活体校准源
@@ -1422,4 +1438,32 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   比"无记录"更贴语义）；③ status 增列 image/workdir/created/name/tags；
   ④ workdir 不变量退回到**纯粹路径语义**（workdir = work_home/<name>），
   不再承担所有权判定职责
+- 日期: 2026-11-25
+
+### AD-031: status 结构分层——集合是 map，指针是标量，地址入面（v3.26）
+
+- 状态: Accepted
+- 背景: P0 实现暴露三个问题——① **结构混层**：`envs`（集合）、`machines`（集合）、
+  `default`（指向某一个 env 的标量指针）被平铺在同一层，Agent 读到的是"三张
+  平级清单"，无法从形状上区分"我能改的东西"与"我当前在哪儿"；用户裁示：
+  "default 只有一个，而 name 对象有多个"——单值与多值不同层
+  ② **地址缺席**：docker 有内部网络（用户自定义 bridge，容器名即 DNS 名，§13.2），
+  但 status 不报 IP/DNS——Agent 想知道"别的身体怎么找到我"只能瞎猜
+  ③ **状态说谎**：`machines[].state` 在适配层写死 `"connected"`——启动时 ssh
+  连不上也报 connected。§4.3 要求 connected/disconnected/reconnecting
+- 备选方案:
+  - envs/machines 保持数组: 拒绝 — Agent 要按名直取必须扫；且与 default 形状同构
+  - 给 default 也包一层对象（{"env": name}）: 拒绝 — 多一层壳，名字本身就是键
+  - **集合改按名键控 map + default 保持标量指针: 采纳** — 形状即语义：
+    object = 多值集合，scalar = 指针；按名寻址
+  - 网络地址进 status 还是 resource_inspect: 采纳 status（全景层就要有地址，
+  inspect 是单资源深查，不该是"唯一能看到地址的地方"）
+  - machine 状态继续写死: 拒绝 — status 是"本体感觉"，说谎比没有更坏
+- 决策: §4.3 载荷按上图分层；env 行加 network{name,ip,dns}；machine 行加
+  address（host:port）+ os；machine 状态取 pkg/remote 的真实连接态
+- 影响: ① 状态面板从"三张平级清单"变为"两集合 + 一指针"；② ssh 瘦模式的
+  异步能力诚实拒绝（blocking-only，async 单独报不支持）；③ SFTP 侧修 Go 不做
+  波浪号展开导致 key 读不到的真 bug（exec 走 ssh 二进制自带展开，故只有 SFTP
+  中招）；④ P1 当 env 可落在远端 backend 上时，machine 状态应下沉挂到 env 行
+  （env.backend/env.target），顶层 machines 退化为端点目录
 - 日期: 2026-11-25

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -16,6 +17,21 @@ import (
 // ControlMaster socket is OpenSSH-internal and not programmatically
 // shareable); the master still accelerates exec, SFTP correctness is what
 // the tier table promises (byte stream, no encoding issues).
+// expandHome resolves a leading "~" to the user's home (Go does no tilde
+// expansion; the ssh binary does, so the two paths must agree).
+func expandHome(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			if p == "~" {
+				return home
+			}
+			return filepath.Join(home, p[2:])
+		}
+	}
+	return p
+}
+
 func (b *Backend) sftpClient(ctx context.Context, machine string) (*sftp.Client, func(), error) {
 	b.mu.Lock()
 	st, ok := b.machines[machine]
@@ -53,7 +69,7 @@ func sshAuth(keyPath string) []ssh.AuthMethod {
 	if keyPath == "" {
 		keyPath = filepath.Join(os.Getenv("HOME"), ".ssh", "id_ed25519")
 	}
-	key, err := os.ReadFile(keyPath)
+	key, err := os.ReadFile(expandHome(keyPath))
 	if err != nil {
 		return nil
 	}

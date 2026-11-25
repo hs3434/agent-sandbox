@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hs3434/agent-sandbox/pkg/audit"
+	"github.com/hs3434/agent-sandbox/pkg/container"
 	"github.com/hs3434/agent-sandbox/pkg/resource"
 	"github.com/hs3434/agent-sandbox/pkg/store"
 )
@@ -130,6 +131,12 @@ func (a fakeAdapter) Remove(ctx context.Context, id resource.ResourceID, purge b
 // ListNames exposes daemon truth for reconcile (docker backend implements this).
 func (a fakeAdapter) ListNames(ctx context.Context) ([]string, error) {
 	return a.f.ListNames(), nil
+}
+
+// NetworkInfo exposes the body's network address (docker backend implements
+// this) — status must show where other bodies can reach it.
+func (a fakeAdapter) NetworkInfo(ctx context.Context, id resource.ResourceID) (container.NetAddress, error) {
+	return container.NetAddress{Network: "sandbox", IP: "172.20.0.7", DNS: lastSeg(string(id))}, nil
 }
 
 func TestCreateRegistersAndRuns(t *testing.T) {
@@ -342,5 +349,61 @@ func TestRemoveByName(t *testing.T) {
 	}
 	if err := h.orch.Remove(ctx, "byname", false); err == nil {
 		t.Fatal("remove of unknown name must fail loudly")
+	}
+}
+
+// TestStatusShapeAndContent: collections are name-keyed maps, `default` is a
+// pointer into envs, and every env row carries its network address.
+func TestStatusShapeAndContent(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.orch.Create(ctx, CreateOpts{Name: "env-a", Image: "alpine:3"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := h.orch.Create(ctx, CreateOpts{Name: "env-b", Image: "busybox:1"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	st, err := h.orch.Status(ctx)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	envs, ok := st["envs"].(map[string]any)
+	if !ok {
+		t.Fatalf("envs must be a name-keyed map, got %T", st["envs"])
+	}
+	if len(envs) != 2 {
+		t.Fatalf("envs = %d entries, want 2", len(envs))
+	}
+	row, ok := envs["env-a"].(map[string]any)
+	if !ok {
+		t.Fatalf("envs[env-a] must be an object, got %T", envs["env-a"])
+	}
+	if row["image"] != "alpine:3" {
+		t.Fatalf("image = %v, want alpine:3", row["image"])
+	}
+	if row["workdir"] == "" {
+		t.Fatal("env row must carry its workdir")
+	}
+	net, ok := row["network"].(map[string]any)
+	if !ok {
+		t.Fatalf("env row must carry its network address, got %T", row["network"])
+	}
+	if net["ip"] != "172.20.0.7" || net["dns"] != "env-a" || net["name"] != "sandbox" {
+		t.Fatalf("network = %v, want ip/dns/name", net)
+	}
+	// default is a pointer (scalar naming one env), not a peer collection
+	def, ok := st["default"].(string)
+	if !ok {
+		t.Fatalf("default must be a string pointer, got %T", st["default"])
+	}
+	if def != "env-a" && def != "env-b" {
+		t.Fatalf("default = %q, must name one of the envs", def)
+	}
+	if _, ok := envs[def]; !ok {
+		t.Fatalf("default %q must exist in envs", def)
+	}
+	// machines is a collection too (empty here — no declared machines)
+	if _, ok := st["machines"].(map[string]any); !ok {
+		t.Fatalf("machines must be a name-keyed map, got %T", st["machines"])
 	}
 }

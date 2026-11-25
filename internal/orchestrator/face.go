@@ -19,6 +19,11 @@ import (
 // route, ssh machines route by name (AD-026 machine selector semantics).
 type execFace interface {
 	Exec(ctx context.Context, id resource.ResourceID, cmd string, opts ...container.ExecOptions) (container.ExecResult, error)
+}
+
+// asyncExecFace is the subset that can detach a process (docker only in P0:
+// the ssh thin mode is blocking-only by design, AD-026).
+type asyncExecFace interface {
 	ExecAsync(ctx context.Context, id resource.ResourceID, cmd string) (*container.Handle, error)
 	Kill(ctx context.Context, id resource.ResourceID, pid int) error
 }
@@ -30,6 +35,11 @@ type fileFace interface {
 
 type buildFace interface {
 	Build(ctx context.Context, id resource.ResourceID, opts container.BuildOptions) error
+}
+
+// networkFace reports a body's network address (where others can reach it).
+type networkFace interface {
+	NetworkInfo(ctx context.Context, id resource.ResourceID) (container.NetAddress, error)
 }
 
 // ShellExec runs a command on the default env / named machine. Blocking mode
@@ -54,7 +64,11 @@ func (o *Orchestrator) ShellExec(ctx context.Context, machine, shellID string, a
 	}
 	id := o.idFor(target)
 	if async {
-		h, err := ef.ExecAsync(ctx, id, cmd)
+		af, ok := be.(asyncExecFace)
+		if !ok {
+			return nil, fmt.Errorf("machine %q does not support async exec (ssh thin mode is blocking-only)", target)
+		}
+		h, err := af.ExecAsync(ctx, id, cmd)
 		if err != nil {
 			return nil, err
 		}
@@ -200,10 +214,13 @@ func (o *Orchestrator) ListImages(ctx context.Context) ([]string, error) {
 
 // Status is the full-body read (§4.3): what the registry knows about every
 // body we manage, plus the machines we can reach and the current default.
-// The registry row is the truth: id/name/image/backend/status/workdir/age —
-// no probing, no guessing.
+//
+// Shape discipline (v3.26): collections are name-keyed maps, the pointer is
+// a scalar — `default` names one entry of `envs`, it is not a peer list.
+// Everything here is read from the database + live connection facts; nothing
+// is guessed.
 func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
-	envs := []map[string]any{}
+	envs := map[string]any{}
 	records, err := o.store.ListResources(resource.TypeExecEnv)
 	if err != nil {
 		return nil, err
@@ -211,33 +228,45 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 	for _, m := range records {
 		name := lastSeg(string(m.ID))
 		row := map[string]any{
-			"id":       string(m.ID),
-			"name":     name,
-			"status":   string(m.Status),
-			"backend":  m.Backend,
-			"workdir":  o.WorkdirFor(name),
-			"created":  m.CreatedAt.UTC().Format(time.RFC3339),
-			"image":    m.Image,
+			"id":      string(m.ID),
+			"status":  string(m.Status),
+			"backend": m.Backend,
+			"image":   m.Image,
+			"workdir": o.WorkdirFor(name),
+			"created": m.CreatedAt.UTC().Format(time.RFC3339),
 		}
 		if len(m.Tags) > 0 {
 			row["tags"] = m.Tags
 		}
-		envs = append(envs, row)
-	}
-	machines := []map[string]any{}
-	for name, be := range o.backends {
-		st := "connected"
-		if h, ok := be.(interface{ Health() string }); ok {
-			st = h.Health()
+		// network address: where other bodies can reach this one (§13.2)
+		if nf, ok := o.backendFor(name).(networkFace); ok {
+			if addr, err := nf.NetworkInfo(ctx, m.ID); err == nil {
+				row["network"] = map[string]any{
+					"name": addr.Network, "ip": addr.IP, "dns": addr.DNS,
+				}
+			}
 		}
-		machines = append(machines, map[string]any{"name": name, "state": st})
+		envs[name] = row
 	}
-	sort.Slice(machines, func(i, j int) bool {
-		return machines[i]["name"].(string) < machines[j]["name"].(string)
-	})
+
+	machines := map[string]any{}
+	for name, be := range o.backends {
+		row := map[string]any{}
+		if h, ok := be.(interface{ Health() string }); ok {
+			row["state"] = h.Health()
+		}
+		if t, ok := be.(interface{ TargetInfo() (string, string) }); ok {
+			addr, osType := t.TargetInfo()
+			row["address"] = addr
+			row["os"] = osType
+		}
+		machines[name] = row
+	}
+
 	return map[string]any{
-		"envs": envs, "machines": machines,
-		"default": o.defaultEnv(),
+		"envs":    envs,      // collection: body name → body facts
+		"machines": machines, // collection: machine name → reachability facts
+		"default": o.defaultEnv(), // pointer: the name of one env (the workbench)
 	}, nil
 }
 

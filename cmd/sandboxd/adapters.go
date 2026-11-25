@@ -42,7 +42,18 @@ func (m remoteMachine) WriteFile(ctx context.Context, id resource.ResourceID, pa
 	return m.be.WriteFile(ctx, m.name, path, content)
 }
 
-func (m remoteMachine) Health() string { return "connected" }
+// Health reports the real connection state — never a hardcoded "connected"
+// (status must not lie: §4.3 connected/disconnected/reconnecting).
+func (m remoteMachine) Health() string { return m.be.State(m.name) }
+
+// TargetInfo exposes the endpoint address and OS type (where to reach it).
+func (m remoteMachine) TargetInfo() (string, string) {
+	t, ok := m.be.TargetOf(m.name)
+	if !ok {
+		return "", ""
+	}
+	return fmt.Sprintf("%s:%d", t.Host, t.Port), t.OSType
+}
 
 // orchestratorFaceAdapter exposes the orchestrator as the mcpserver contract
 // (face.go interface) — the single seam between the two internal layers.

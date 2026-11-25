@@ -52,6 +52,8 @@
 | 23 | 名字→ID 解析（名字是资产地址） | U | orchestrator_test.TestRemoveByName | ✅ |
 | 25 | 创建写前意图（先落库再建容器） | U | orchestrator_test.TestCreateWritesIntentBeforeBody（镜像进库，status 可答） | ✅ |
 | 26 | 失败创建留 error 行 | U | orchestrator_test.TestCreateFailureLeavesErrorRow（自愈两步法的既决条件） | ✅ |
+| 27 | status 结构分层 + 网络地址 | U | orchestrator_test.TestStatusShapeAndContent（集合=按名 map，default=指针，env 行带 network{ip,dns}） | ✅ |
+| 28 | ssh machine 真实状态 + 端点地址 | P | e2e：loop=connected / deadbox=disconnected，address=host:port（状态不写死） | ✅ |
 | 24 | 端到端 stdio 链路 | P | e2e/smoke.py（17 工具 + create→exec→file×3→status→remove） | ✅ |
 
 ## 未覆盖

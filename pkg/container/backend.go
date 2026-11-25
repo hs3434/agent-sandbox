@@ -189,6 +189,35 @@ func (b *Backend) ensureImage(ctx context.Context, img string) error {
 	return nil
 }
 
+// NetAddress is a body's address on its backend network (§13.2): the
+// user-defined bridge it lives on, its IP there, and the DNS name other
+// bodies use to reach it (container name = DNS name on a user-defined
+// bridge).
+type NetAddress struct {
+	Network string // user-defined bridge name ("" = daemon default bridge)
+	IP      string
+	DNS     string
+}
+
+// NetworkInfo reports the body's network address. Honest failure: an
+// unreachable container is an error, not an empty address.
+func (b *Backend) NetworkInfo(ctx context.Context, id resource.ResourceID) (NetAddress, error) {
+	name := b.containerName(id)
+	insp, err := b.cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return NetAddress{}, fmt.Errorf("inspect %q: %w", name, err)
+	}
+	addr := NetAddress{Network: b.network, DNS: name}
+	for _, n := range insp.NetworkSettings.Networks {
+		addr.IP = n.IPAddress
+		if addr.Network == "" {
+			addr.Network = n.NetworkID
+		}
+		break
+	}
+	return addr, nil
+}
+
 // ListNames exposes daemon container names for reconcile (registry × daemon
 // comparison, spec §3.1). Sandbox-managed containers carry the sandboxd label.
 func (b *Backend) ListNames(ctx context.Context) ([]string, error) {

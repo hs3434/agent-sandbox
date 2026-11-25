@@ -72,6 +72,7 @@ type machineState struct {
 	target     Target
 	socketPath string
 	sessions   int
+	state      string // connected | disconnected | reconnecting (§4.3)
 	mu         sync.Mutex
 }
 
@@ -120,11 +121,45 @@ func (b *Backend) Connect(t Target) error {
 		t.Port = 22
 	}
 	socket := filepath.Join(b.sockDir, t.Name+".sock")
-	st := &machineState{target: t, socketPath: socket}
+	st := &machineState{target: t, socketPath: socket, state: "disconnected"}
 	b.mu.Lock()
 	b.machines[t.Name] = st
 	b.mu.Unlock()
-	return b.masterUp(st)
+	if err := b.masterUp(st); err != nil {
+		return err
+	}
+	st.mu.Lock()
+	st.state = "connected"
+	st.mu.Unlock()
+	return nil
+}
+
+// State reports the machine's connection state (§4.3: connected /
+// disconnected / reconnecting). Unknown machine → disconnected.
+func (b *Backend) State(name string) string {
+	b.mu.Lock()
+	st := b.machines[name]
+	b.mu.Unlock()
+	if st == nil {
+		return "disconnected"
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.state == "" {
+		return "disconnected"
+	}
+	return st.state
+}
+
+// TargetOf returns the declared target (host/port/os) for a machine.
+func (b *Backend) TargetOf(name string) (Target, bool) {
+	b.mu.Lock()
+	st := b.machines[name]
+	b.mu.Unlock()
+	if st == nil {
+		return Target{}, false
+	}
+	return st.target, true
 }
 
 // masterUp builds/rebuilds the ControlMaster (transparent rebuild path).
@@ -188,14 +223,25 @@ func (b *Backend) ensureAlive(st *machineState) error {
 		return nil
 	}
 	// zombie or dead: force teardown + fresh master, then re-probe
+	setMachineState(st, "reconnecting")
 	_ = b.masterExit(st)
 	if err := b.masterUp(st); err != nil {
+		setMachineState(st, "disconnected")
 		return fmt.Errorf("machine %q disconnected (rebuild failed): %w", st.target.Name, err)
 	}
 	if err := b.probe(st); err != nil {
+		setMachineState(st, "disconnected")
 		return fmt.Errorf("machine %q disconnected (probe failed after rebuild): %w", st.target.Name, err)
 	}
+	setMachineState(st, "connected")
 	return nil
+}
+
+// setMachineState records the connection state (§4.3 vocabulary).
+func setMachineState(st *machineState, s string) {
+	st.mu.Lock()
+	st.state = s
+	st.mu.Unlock()
 }
 
 // sshBaseArgs assembles the multiplexed ssh command line for exec.
