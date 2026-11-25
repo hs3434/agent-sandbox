@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/hs3434/agent-sandbox/pkg/audit"
-	"github.com/hs3434/agent-sandbox/pkg/resource"
 	"github.com/hs3434/agent-sandbox/pkg/store"
 )
 
@@ -293,12 +292,7 @@ func (s *Server) toolInspect(ctx context.Context, args json.RawMessage) (any, er
 	if id == "" {
 		return nil, fmt.Errorf("no env exists — container_create first, or pass name/id")
 	}
-	m, err := s.deps.Store.GetResource(resource.ResourceID(id))
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"id": string(m.ID), "type": m.Type, "status": m.Status,
-		"backend": m.Backend, "tags": m.Tags, "created_at": m.CreatedAt}, nil
+	return s.deps.Orch.Inspect(ctx, id)
 }
 
 // ---- memory family (single doc, no keys — AD-012) ----

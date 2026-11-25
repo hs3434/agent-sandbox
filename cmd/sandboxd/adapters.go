@@ -120,6 +120,10 @@ func (a orchestratorFaceAdapter) Status(ctx context.Context) (map[string]any, er
 	return a.o.Status(ctx)
 }
 
+func (a orchestratorFaceAdapter) Inspect(ctx context.Context, id string) (map[string]any, error) {
+	return a.o.Inspect(ctx, id)
+}
+
 func (a orchestratorFaceAdapter) WorkdirFor(name string) string {
 	return a.o.WorkdirFor(name)
 }

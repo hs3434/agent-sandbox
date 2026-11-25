@@ -21,6 +21,7 @@ type OrchestratorFace interface {
 	FilePatch(ctx context.Context, machine, path, oldS, newS string, all bool) (int, error)
 	FileSearch(ctx context.Context, machine, dir, pattern, searchType string) ([]string, error)
 	Status(ctx context.Context) (map[string]any, error)
+	Inspect(ctx context.Context, id string) (map[string]any, error)
 	WorkdirFor(name string) string
 }
 

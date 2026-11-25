@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
-> 状态：v3.27 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）；v3.26 status 结构分层：集合用按名键控 map、`default` 是指针不是同级清单、网络地址入面（env 的 IP/DNS + machine 的 host:port）、machine 状态取真值（不再写死 connected）（AD-031）；v3.27 载荷按轴命名：status 用 `docker` / `ssh` 键（部署轴）而非抽象类目 `envs` / `machines`，配置侧机器声明加 `kind`（默认 ssh）（AD-032）
+> 状态：v3.29 — 2026-11-25，**P0 施工基线**
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）；v3.26 status 结构分层：集合用按名键控 map、`default` 是指针不是同级清单、网络地址入面（env 的 IP/DNS + machine 的 host:port）、machine 状态取真值（不再写死 connected）（AD-031）；v3.27 载荷按轴命名：status 用 `docker` / `ssh` 键（部署轴）而非抽象类目 `envs` / `machines`，配置侧机器声明加 `kind`（默认 ssh）（AD-032）；v3.28 浅查/深查分工：status 只留"动手当下要用的"（status/image/workdir/network），身份与出处（id/backend/created_at/tags）下沉到 resource_inspect（AD-033）；v3.29 拆除提速：容器 PID 1 改为处理 SIGTERM（`sleep infinity` 忽略信号 → 每次 stop 等满 60s 优雅窗口），测试套件 372s → 9s（AD-034）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -220,12 +220,18 @@ Agent 自建凭证（userland，AD-013），平台审计不承诺脱敏
 
 ```
 {
-  "docker":  { "<name>": { id, status, backend, image, workdir, created, tags?, network{name,ip,dns} } },
+  "docker":  { "<name>": { status, image, workdir, network{name,ip,dns} } },
   "ssh":     { "<name>": { state, address, os } },
   "default": "<name>",          // 指针：docker 里某一项的名字，不是第三张清单
   "_events": [ ... ]            // 捎带（游标去重）
 }
 ```
+
+- **浅查 / 深查分工**（v3.28，AD-033）：status 只回答"当下动手要用的"——身体活着吗、
+  什么镜像、文件在哪、别人怎么找到它；**身份与出处**（id/tenant、backend、
+  created_at、tags、owner）属深查，归 `resource_inspect`：
+  `{ id, name, type, backend, status, image, workdir, created_at, tags?, owner?, network }`
+  ——全景不重复单资源细节，Agent 按需再深查一次（§4.3 分工：先 status 后按需 inspect）
 
 - **键 = 部署轴**（v3.27，AD-032）：载荷报的是**这台实例实际部署了什么轴**，
   不是抽象类目——`docker` 是 docker 身体，`ssh` 是可达的 ssh 目标；将来 k8s/vm
@@ -1498,4 +1504,51 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   声明的远程目标 = status.ssh 的键；P1 加别的轴时该参数泛化为 target）
   ——注意这与 AD-027"工具名不焊 backend"并不矛盾：工具名按**被操作物**命名
   （container_*），载荷键按**部署轴**报告，两者各司其职
+- 日期: 2026-11-25
+
+### AD-033: 浅查/深查分工——status 瘦身，身份与出处下沉 inspect（v3.28）
+
+- 状态: Accepted
+- 背景: v3.27 之后 status 的 env 行仍带 `backend`、`created`（以及与 map 键重复的
+  `id`）——但这些都不是"动手当下"要的信息：`backend` 在 `docker` 轴下恒为 docker
+  （键已经说了），`created` 是**出处**而非**现状**（Agent 问"这身体还在吗"不需要
+  它的出生时间），`id` 与键重复（名字即地址，AD-029）。用户裁示："backend 看起来
+  也可以删除，created 感觉也没啥用，应该防止 inspect 里面详细显示"——即：深的东西
+  放 inspect。
+- 备选方案:
+  - status 保留全部字段: 拒绝 — 全景的作用是"一次看完"，冗余字段稀释信噪比、
+    占 context；且 §4.3 已定"status = 全景浅查，inspect = 单资源深查"
+  - 把 created_at 也删掉（inspect 也不给）: 拒绝 — 出处有回溯价值（NFR-7 回溯），
+    只是不该占用全景
+  - **status 瘦身 + 出处下沉 inspect: 采纳** — 两层各司其职：浅查答"现在怎样、
+    怎么用"，深查答"这是谁、从哪来、什么时候的"
+- 决策: §4.3 载荷图更新——status 的 env 行 = {status, image, workdir, network}；
+  resource_inspect 载荷 = {id, name, type, backend, status, image, workdir,
+  created_at, tags?, owner?, network}（inspect 顺带补上此前缺失的 image/workdir/
+  network——深查反而比浅查信息少是荒谬的）
+- 影响: ① 编排层新增 Inspect 门面（orchestrator.Inspect，工具面走契约不直接摸
+  store）；② status 与 inspect 的字段集互补而非包含；③ 用户给的判据可复用：
+  **"当下动手要用的" 留 status，其余进 inspect**
+- 日期: 2026-11-25
+
+### AD-034: 拆除提速——PID 1 必须响应 SIGTERM（v3.29）
+
+- 状态: Accepted
+- 背景: 管道测试全绿但每次 ~6 分钟（372s），逐测计时发现每个测试都恰好 ~61s——
+  不是测试逻辑慢，是**拆除的固定开销**：容器 PID 1 是 `sleep infinity`，它
+  **忽略 SIGTERM**，docker stop 因此等满优雅窗口（代码里是 60s）才 SIGKILL。
+  6 个测试 × 60s = 全是拆除账
+- 备选方案:
+  - 每次测试手动 `docker rm -f`: 治标——生产路径（container_remove）照样慢，
+    而"拆身体要等一分钟"本身就是产品缺陷（Agent 的自愈/重建会被拖住）
+  - 把优雅窗口从 60s 调到 10s: 不够——仍是每次 10s，且 SIGKILL 硬杀不给
+    清理机会
+  - **PID 1 改为真正处理 SIGTERM（`sh -c "trap 'exit 0' TERM; sleep infinity & wait"`），
+    优雅窗口降到 10s 兜底: 采纳** — 实测 docker stop 0.64s vs 10.5s；身体
+    收到 SIGTERM 即退，Agent 的重建不再被拆除拖住
+- 决策: 容器默认命令改为 trap 包装的常驻 shell；DefaultStopTimeout 60→10s 兜底
+- 影响: ① 管道套件 372s → 9.2s（40×），全量 `go test ./...` 10s；② 拆除语义
+  更正确（SIGTERM → 优雅退出，而非等窗口后硬杀）；③ 测试发现的路径问题：
+  删除正在被挂载的 workdir 会让容器 exec 报 "outside of container mount
+  namespace root"——不变量要求 workdir 存续，运维清理须先摘容器
 - 日期: 2026-11-25

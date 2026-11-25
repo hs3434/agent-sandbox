@@ -227,13 +227,13 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 	}
 	for _, m := range records {
 		name := lastSeg(string(m.ID))
+		// shallow view (§4.3: status = 全景浅查, inspect = 单资源深查):
+		// only what an agent needs to act right now. Identity (id/tenant),
+		// backend label and creation time live in resource_inspect.
 		row := map[string]any{
-			"id":      string(m.ID),
 			"status":  string(m.Status),
-			"backend": m.Backend,
 			"image":   m.Image,
 			"workdir": o.WorkdirFor(name),
-			"created": m.CreatedAt.UTC().Format(time.RFC3339),
 		}
 		if len(m.Tags) > 0 {
 			row["tags"] = m.Tags
@@ -287,6 +287,44 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 	}
 	if _, ok := out["ssh"]; !ok {
 		out["ssh"] = map[string]any{}
+	}
+	return out, nil
+}
+
+// Inspect is the deep single-resource view (§4.3): identity, provenance,
+// timing — everything status deliberately leaves out.
+func (o *Orchestrator) Inspect(ctx context.Context, id string) (map[string]any, error) {
+	rid, err := o.ResolveID(id)
+	if err != nil {
+		return nil, err
+	}
+	m, err := o.store.GetResource(rid)
+	if err != nil {
+		return nil, err
+	}
+	name := lastSeg(string(m.ID))
+	out := map[string]any{
+		"id":         string(m.ID),
+		"name":       name,
+		"type":       string(m.Type),
+		"backend":    m.Backend,
+		"status":     string(m.Status),
+		"image":      m.Image,
+		"workdir":    o.WorkdirFor(name),
+		"created_at": m.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if len(m.Tags) > 0 {
+		out["tags"] = m.Tags
+	}
+	if m.Owner != "" {
+		out["owner"] = m.Owner
+	}
+	if nf, ok := o.backendFor(name).(networkFace); ok {
+		if addr, err := nf.NetworkInfo(ctx, rid); err == nil {
+			out["network"] = map[string]any{
+				"name": addr.Network, "ip": addr.IP, "dns": addr.DNS,
+			}
+		}
 	}
 	return out, nil
 }

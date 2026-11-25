@@ -353,7 +353,8 @@ func TestRemoveByName(t *testing.T) {
 }
 
 // TestStatusShapeAndContent: collections are name-keyed maps, `default` is a
-// pointer into envs, and every env row carries its network address.
+// pointer into docker, every env row carries its network address, and the
+// overview stays shallow (no backend/created/id — those are inspect's job).
 func TestStatusShapeAndContent(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -384,6 +385,13 @@ func TestStatusShapeAndContent(t *testing.T) {
 	if row["workdir"] == "" {
 		t.Fatal("env row must carry its workdir")
 	}
+	// shallow discipline: identity and provenance live in inspect, not in the
+	// overview (backend is implied by the axis key, id repeats the name)
+	for _, k := range []string{"backend", "created", "created_at", "id"} {
+		if _, ok := row[k]; ok {
+			t.Fatalf("status row must stay shallow — %q belongs to resource_inspect", k)
+		}
+	}
 	net, ok := row["network"].(map[string]any)
 	if !ok {
 		t.Fatalf("env row must carry its network address, got %T", row["network"])
@@ -409,5 +417,33 @@ func TestStatusShapeAndContent(t *testing.T) {
 	}
 	if _, ok := st["envs"]; ok {
 		t.Fatal("payload must name the deployed axis (docker), not the abstract category")
+	}
+}
+
+// TestInspectIsTheDeepView: inspect carries identity and provenance that
+// status deliberately omits (backend/created_at/id + the shallow facts).
+func TestInspectIsTheDeepView(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.orch.Create(ctx, CreateOpts{Name: "deep-1", Image: "alpine:3"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ins, err := h.orch.Inspect(ctx, "deep-1")
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	for _, k := range []string{"id", "name", "type", "backend", "created_at", "image", "workdir"} {
+		if _, ok := ins[k]; !ok {
+			t.Fatalf("inspect must carry %q", k)
+		}
+	}
+	if ins["id"] != "local:exec_env:deep-1" {
+		t.Fatalf("id = %v", ins["id"])
+	}
+	if ins["backend"] != "docker" {
+		t.Fatalf("backend = %v, want docker", ins["backend"])
+	}
+	if _, ok := ins["network"]; !ok {
+		t.Fatal("inspect must carry the network address too")
 	}
 }

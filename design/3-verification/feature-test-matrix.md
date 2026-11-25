@@ -54,6 +54,7 @@
 | 26 | 失败创建留 error 行 | U | orchestrator_test.TestCreateFailureLeavesErrorRow（自愈两步法的既决条件） | ✅ |
 | 27 | status 结构分层 + 网络地址 | U | orchestrator_test.TestStatusShapeAndContent（集合=按名 map，default=指针，env 行带 network{ip,dns}） | ✅ |
 | 28 | ssh machine 真实状态 + 端点地址 | P | e2e：loop=connected / deadbox=disconnected，address=host:port（状态不写死） | ✅ |
+| 29 | 浅查/深查分工 | U | orchestrator_test.TestStatusShapeAndContent（status 无 backend/created/id）+ TestInspectIsTheDeepView（inspect 出处齐全） | ✅ |
 | 24 | 端到端 stdio 链路 | P | e2e/smoke.py（17 工具 + create→exec→file×3→status→remove） | ✅ |
 
 ## 未覆盖

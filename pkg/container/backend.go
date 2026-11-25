@@ -31,7 +31,7 @@ import (
 // Declared defaults (I6 declaration surface; sandbox.yaml overrides land in m4).
 const (
 	DefaultExecTimeout = 60 * time.Second
-	DefaultStopTimeout = 60 // seconds, graceful stop window
+	DefaultStopTimeout = 10 // seconds, graceful stop window (backstop; PID 1 traps SIGTERM → ~0.5s)
 	WorkdirInContainer = "/workspace"
 )
 
@@ -148,9 +148,11 @@ func (b *Backend) Create(ctx context.Context, name string, spec resource.ExecEnv
 	}
 	cfg := &container.Config{
 		Image: img,
-		// keep the container alive without a real workload: a sleeping
-		// shell the agent's execs attach around
-		Cmd:   []string{"sleep", "infinity"},
+		// Keep the container alive without a real workload: a sleeping shell
+		// the agent's execs attach around. PID 1 must honour SIGTERM —
+		// `sleep infinity` ignores it, so every stop burned the full grace
+		// window (60s) before SIGKILL.
+		Cmd: []string{"sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"},
 		WorkingDir: WorkdirInContainer,
 		Tty:   false,
 	}
