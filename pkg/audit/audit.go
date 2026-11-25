@@ -38,7 +38,8 @@ type Event struct {
 	Action     string
 	Outcome    Outcome
 	DurationMS int64
-	Detail     string // params, redacted by the caller before Emit
+	Detail     string // params; secret values are fingerprinted by the sink
+	SecretFingerprint string // sha256 prefix when Detail carried a secret (NFR-5)
 }
 
 // Sink is the persistence interface for audit events. In-memory and SQLite

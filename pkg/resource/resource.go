@@ -50,14 +50,21 @@ func NewResourceID(tenant string, typ Type, name string) ResourceID {
 }
 
 // Status is the runtime state machine for exec_env resources
-// (design-spec-v3 §3.1). Only P0 states so far; the set grows with the
-// state machine implementation.
+// (design-spec-v3 §3.1, full P0 set):
+//
+//	created → starting → running → stopping → stopped → removing → removed
+//	                              └→ error (rebuild-only terminal, AD-021)
 type Status string
 
 const (
-	StatusCreated Status = "created"
-	StatusRunning Status = "running"
-	StatusError   Status = "error"
+	StatusCreated  Status = "created"
+	StatusStarting Status = "starting"
+	StatusRunning  Status = "running"
+	StatusStopping Status = "stopping"
+	StatusStopped  Status = "stopped"
+	StatusRemoving Status = "removing"
+	StatusRemoved  Status = "removed"
+	StatusError    Status = "error"
 )
 
 // Meta is the shared metadata attached to every resource.
