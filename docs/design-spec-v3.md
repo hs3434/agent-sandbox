@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
 > 状态：v3.21 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -213,7 +213,9 @@ Agent 自建凭证（userland，AD-013），平台审计不承诺脱敏
 
 返回：实例内全部 env 清单（各自生命周期/backend）、进程句柄 alive/dead、可用 capability、
 网络位置（内网|外网）、凭证在场元数据（非值）、**default**（当前默认 env，跟随式默认
-的唯一确认源，§4.0）。
+的唯一确认源，§4.0）、**machines**（已声明机器清单及连接状态
+connected/disconnected/reconnecting——machine_list 不设专门工具，status 全景已含，
+v3.21 AD-026）。
 
 - 与 §4.1 分工：**status = 本体感觉（永远真，平台算）**，**state doc = 记忆（可过时，
   Agent 写）**——status 是 state doc 的活体校准源
@@ -702,9 +704,11 @@ docker:
 | P0-m4 | sandbox.yaml 配置装配（双路径/DNS 网络）+ MCP server（7 工具） | §4 §13 |
 
 P1：**伴生服务**（替换瘦模式——sandboxd-lite 二进制 + 断线五层 + async/账本在远程启用，
-§10.0——P1 第一个硬仗；覆盖 linux/windows/android 三 OS）+ machine_connect 动态注册 +
-lifecycle 睡眠动词（env_sleep/env_wake，随配额执行器，AD-026）+ 审计脱敏 +
-workdir 快照轴 + commit 快照评估 + docker×windows 容器评估
+§10.0——P1 第一个硬仗；覆盖 linux/windows/android 三 OS）+ machine_connect/disconnect
+（**条件触发**：仅当"任务中途接入陌生主机"场景真实出现；配置声明 + 热加载是默认答案；
+machine_list 不设——status 全景已含机器状态，AD-026）+ lifecycle 睡眠动词
+（env_sleep/env_wake，随配额执行器，AD-026）+ 审计脱敏 + workdir 快照轴 +
+commit 快照评估 + docker×windows 容器评估
 P2：三层身份 + policy_* + snapshot_* + credential + metrics + vm/k8s backend 评估
 
 验证矩阵（`docs/verification/feature-test-matrix.md`）在 P0-m3 首个可运行 backend
@@ -1214,10 +1218,14 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
 - 决策: ① env_sleep/env_wake 移除（P1 随配额执行器回归，记录在 P1 路线图）；
   ② +image_list()（image 族 2 工具）；③ machine? 参数回归全部目标选择型签名
   （shell_exec/shell_new/file_*——P0 = 已声明 machine 的选择器）；④ policy_*/
-  snapshot_*/set_default 全部挪 P2
+  snapshot_*/set_default 全部挪 P2；⑤ machine_list 不设——status 全景返回清单
+  增补 machines 维度（含连接状态），专门枚举工具与全景快照重合，奥卡姆砍；
+  machine_connect/disconnect 降为**条件触发**（"任务中途接新机"场景出现才建，
+  默认答案 = 配置声明 + 热加载——Python 版至今无连接工具活得很好）
 - 影响: 工具面 18→17（6 族）；NFR-8 验证阶段改 P2（配额执行器随治理身份）；
   P0-m3b 的 machine 注册 = sandbox.yaml SSHTarget 声明式配置（抄 Python 版
-  config.py 结构）；AD-008 的"睡眠省时长"承诺顺延至 P1 配额执行器
+  config.py 结构）；AD-008 的"睡眠省时长"承诺顺延至 P1 配额执行器；
+  §4.3 status 返回清单增补 machines 维度；P1 路线图 machine_list 划除
 - 日期: 2026-11-25 Python 对照终审——特性映射表与豁免条款（v3.20）
 
 - 状态: Accepted
