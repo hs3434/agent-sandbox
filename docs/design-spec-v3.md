@@ -121,7 +121,7 @@ injected → active → recycled（任务结束）/ expired（超时兜底）
 
 **P0（17 个工具 / 6 个族，全部有真实消费者；description 直接写全使用说明——工具面
 已薄到无需渐进发现，env 元工具出局 AD-023。machine 注册走 sandbox.yaml 配置声明
-（零专用工具，Python 版同构）；machine_connect 动态注册工具 P1 随伴生回归，AD-026）**：
+（零专用工具，Python 版同构）；machine_connect/disconnect 为 P1 条件触发项，AD-026）**：
 
 **lifecycle 族（3）**——身体的一生：
 env_create(name, {image?, tags?})                  —— 造身体/同名自愈（见 §7.2）
@@ -146,9 +146,11 @@ state_get() / state_put(doc)                       —— 记忆文档（单文�
 status()                                           —— 本体感觉快照（见 §4.3）
 events(after_seq)                                  —— 事件流回放（见 §4.4）
 
-**P1**：machine_connect / machine_disconnect / machine_list（动态注册，随伴生服务）；
-伴生服务模式（替换 ssh 瘦模式）；lifecycle 睡眠动词（env_sleep/env_wake——随配额
-执行器回归，docker backend 专属语义，AD-026 移除记录）；commit 快照评估
+**P1**：machine_connect / machine_disconnect（**条件触发**——"任务中途接新机"场景
+真实出现才建，默认答案 = 配置声明 + 热加载；machine_list 不设——status 全景已含
+机器状态，AD-026）；伴生服务模式（替换 ssh 瘦模式）；lifecycle 睡眠动词
+（env_sleep/env_wake——随配额执行器回归，docker backend 专属语义，AD-026 移除记录）；
+commit 快照评估
 **P2**：policy_set / policy_get / policy_versions（网络策略，随多租户治理）；
 snapshot_*（workdir 轴，随多 backend）；credential_inject / credential_recycle
 （无 read，见 §9）；metrics；vm/k8s backend
