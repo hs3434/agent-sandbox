@@ -70,7 +70,20 @@
 | 36 | 会话生命周期（new/list/remove） | P | e2e/sess_full.py 步 1/4/6/7 | ✅ |
 | 37 | async 句柄账本闭环（write-ahead + 死亡 hook） | P | e2e/async_ledger.py（账本行 running→dead "exited (code 0)"） | ✅ |
 
+## P1 companion（v3.31 sandboxd-server）
+
+| # | 场景 | 级别 | 测试 | 状态 |
+|---|---|---|---|---|
+| 38 | protocol conformance（32MB 帧错 + 10MB 往返 + 100 并发复用一连接 + 握手 fail-closed） | U | protocol_test（6 测：TestHandshakeFailClosed/OversizeLine/TenMBPayload/ConcurrentMultiplexing 等） | ✅ |
+| 39 | docker async 三态终态（exited(7)/容器移除→exit_unknown，永不伪装 0） | P | e2e/t7_tristate.py + container golden starttime（TestStatParserGolden 4 例含 adversarial comm） | ✅ |
+| 40 | companion 生命周期（discovery 0600/0700 原子写 + token 握手 + 错 token 拒 + owner socket 隔离 + 撕裂文件不崩） | P | e2e/t5_probe.py（7 检查）+ companion_test（6 测） | ✅ |
+| 41 | mode 翻转（thin→companion→kill→thin ≤20s，机器不断开） | P | e2e/t6_modeflip.py + gate S1 | ✅ |
+| 42 | companion supervisor（256 cap typed 拒 + 幂等同 handle + boot 重扫 adopt/exit_unknown + kill 组 → signaled） | U | supervisor_test（6 测含真 fork/settle） | ✅ |
+| 43 | 文件协议化（companion-first 路由 + binary 拒绝 + 10MB cap 拒 + typed 错误不下沉 thin） | P | e2e/t9_probe.py（5 检查） | ✅ |
+| 44 | L5 reattach（async handle 存活 kill-9+重启+sandboxd 重启，账本诚实 exit_unknown） | P | e2e/t11_reattach.py（6 步） | ✅ |
+| 45 | red-team gate（S1 kill 翻转 / S2 root guard / S3 pin 关闭 / S4 协议幂等 / S5 措辞无安装提示） | P | e2e/t10_gate.sh（5 场景 exit code 门禁） | ✅ |
+
 ## 未覆盖
 
 - NFR-8 无饥饿：随配额执行器（P2）
-- P1 能力（machine_connect/disconnect、镜像构建产物校验、远程伴生把账本/async 带去 ssh）
+- P1 遗留：companion exit wrapper（自然死亡现在是 exit_unknown，wrapper 后可 exited(0)——W4 细化）；iptables 注入场景（T4 truth：需 root netns，环境无权限，代码路径由 L2 状态机 + drop 诊断单测覆盖）；windows companion（矩阵钉 thin，named not silent）

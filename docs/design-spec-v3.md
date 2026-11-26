@@ -1,7 +1,7 @@
 # Design Spec v3 — Agent 操作现实的支点（原"Sandbox 平台"）
 
 > 状态：v3.30 — 2026-11-25，**P0 施工基线**
-> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）；v3.26 status 结构分层：集合用按名键控 map、`default` 是指针不是同级清单、网络地址入面（env 的 IP/DNS + machine 的 host:port）、machine 状态取真值（不再写死 connected）（AD-031）；v3.27 载荷按轴命名：status 用 `docker` / `ssh` 键（部署轴）而非抽象类目 `envs` / `machines`，配置侧机器声明加 `kind`（默认 ssh）（AD-032）；v3.28 浅查/深查分工：status 只留"动手当下要用的"（status/image/workdir/network），身份与出处（id/backend/created_at/tags）下沉到 resource_inspect（AD-033）；v3.29 拆除提速：容器 PID 1 改为处理 SIGTERM（`sleep infinity` 忽略信号 → 每次 stop 等满 60s 优雅窗口），测试套件 372s → 9s（AD-034）；v3.30 持久会话 + 搜索引擎化：shell_new/remove/list 三工具 + shell_exec 会话路由（marker 分帧，无 PTY）、file_search 走目标机 rg→grep 兜底、async 句柄账本闭环（write-ahead + 死亡 hook）（AD-035）
+> 修订：v3.1 恢复边界 = 本地态；v3.2 capability = 平台原语、用例中立；v3.3 spec 即预留；v3.4 第一性重定位（赋能操作，身体/手/支点）+ 快照策略（标准镜像优先）；v3.5 身体自治（心智归 Agent）；v3.6 状态文档归本体（MCP 直连，记手的状态）；v3.7 commit 快照暂缓 + baseline=镜像引用 + 句柄持久化 + 凭证同钟；v3.8 status 工具（本体感觉与记忆分离）；v3.9 记忆键去 session 化；v3.10 记忆 = 单文档无键；v3.11 Agent 自建凭证归属澄清；v3.12 凭证子系统降级 P2；v3.13 奥卡姆清扫（P0 零快照存储）；v3.14 远程伴生服务（协议对话 + 断线五层）；v3.15 身体事件流（拉模式）；v3.16 description 指引；v3.17 响应捎带通知；v3.18 进程手收缩；v3.19 大落盘：shell_exec 双模式（async 并入）、revert 出局（不变量+键控兑现自愈）、image_build 诞生、workdir 双路径部署、DNS 网络、跟随式默认、env 元工具出局、ssh 瘦模式最小过渡、backend 双轴矩阵；v3.20 Python 对照终审：生命周期动词回归（sleep/wake）、machine 参数退场、控制面重启对账、sudo 管道注记、file 族底层特性三抄（原子写/归一化/敏感路径警告）；v3.21 scheme 再审：sleep/wake 移除（上下文税，随配额执行器 P1 回归）、image_list 补缺、machine 参数回归（P0 含 ssh——注册走配置声明）、policy/snapshot/set_default 挪 P2 + machine_list 并入 status + machine_connect 条件触发；v3.22 族重排：docker 专属面归位（container 族 4 工具以被操作物命名）、resource_inspect 并入 sense 族、companion 远程操控预留撤销；v3.23 ssh 连接自愈：ControlMaster 三件套 + 僵尸往返探测 + 会话卫生（§10.0.1，AD-028）；v3.24 P0 收口：收编所有权证据（workdir 门）、捎带事件游标（每事件一次）、身份分层（tenant:exec_env:name，名字是资产地址）（AD-029）；v3.25 所有权归位：**数据库是"我们管什么"的唯一记录**——创建先写意图（write-ahead）、对账不再收编（daemon-only = 他物，只报不动）、镜像进库（status 可全量回答）（AD-030）；v3.26 status 结构分层：集合用按名键控 map、`default` 是指针不是同级清单、网络地址入面（env 的 IP/DNS + machine 的 host:port）、machine 状态取真值（不再写死 connected）（AD-031）；v3.27 载荷按轴命名：status 用 `docker` / `ssh` 键（部署轴）而非抽象类目 `envs` / `machines`，配置侧机器声明加 `kind`（默认 ssh）（AD-032）；v3.28 浅查/深查分工：status 只留"动手当下要用的"（status/image/workdir/network），身份与出处（id/backend/created_at/tags）下沉到 resource_inspect（AD-033）；v3.29 拆除提速：容器 PID 1 改为处理 SIGTERM（`sleep infinity` 忽略信号 → 每次 stop 等满 60s 优雅窗口），测试套件 372s → 9s（AD-034）；v3.30 持久会话 + 搜索引擎化：shell_new/remove/list 三工具 + shell_exec 会话路由（marker 分帧，无 PTY）、file_search 走目标机 rg→grep 兜底、async 句柄账本闭环（write-ahead + 死亡 hook）（AD-035）；v3.31 companion 落地：sandboxd-server 二进制 + pkg/protocol 契约 + supervisor 账本 + companion client mode 翻转 + 文件协议化 + L5 reattach（AD-036）
 > 依据：云厂商资源管理哲学（AWS/Azure/GCP/阿里云/腾讯云收敛）+ Agent 执行场景分析
 > 核心哲学：
 > 1. **第一性 = 赋能操作**：给 AI 身体（执行环境）和手（操作原语），让 AI 像人一样操作现实
@@ -1581,3 +1581,32 @@ P0 阶段只强制可测的（自愈/放行/不可变/冷启动/exec——凭证
   e2e 全绿（loop@39222：cd 持久/退出码/远端输出）；④ 单元测试补
   marker 分帧/超时存活/busy 拒绝
 - 日期: 2026-11-25
+
+### AD-036: companion 落地——sandboxd-server 全链路（v3.31）
+
+- 状态: Accepted
+- 背景: v3.14 的远程伴生（§10.0）在 P0 只留了 thin 过渡绳（AD-028）。P1
+  第一战把它做成真事：THINK 30 决策卡（companion-spec.md）+ Red Team 3 轮
+  17 findings 全 ACCEPT 后按 7 波 BUILD
+- 决策: ① 传输 = unix socket + `ssh host nc -U <socket>` stdio 桥
+  （OpenSSH 8.9 的 -W 端点仅 TCP；unix 一跳走远端 nc，进程随连接死，无
+  监听残留）；② 安全不变量全部代码强制：token 首行 fail-closed、目录
+  0700/文件 0600、uid0 拒启（--allow_root 显式翻转）、owner socket 命名
+  空间隔离、32MB 双向帧界（超限 FramingError 永不静默截断）；③ 诚实终态
+  三态（exited(N)/signaled(N)/exit_unknown）贯彻两轴——docker reaper 用
+  /proc starttime 防 pid 复用错杀 + base64 exit wrapper（heredoc 变体被
+  任意含引号命令打碎——golden 教训）；④ supervisor = 单循环 + 磁盘账本
+  （D-23）+ boot 重扫（adopt 存活行 / 死亡行落 exit_unknown）+ 256 硬顶
+  typed 拒绝 + request-id 幂等；⑤ mode 翻转由 ping 真值驱动（CompanionState
+  ≠active → thin，机器不断开）；⑥ 文件协议化 companion-first：typed 拒绝
+  （binary/10MB cap）必须浮出——下沉 thin 会绕过 D-08/D-07（transport 错
+  误才允许 thin 兜底）；⑦ L5 reattach = sessions.list 启动对账（companion
+  行收编进平台账本，daemon 真值赢）
+- 影响: ① 工具面 17→18（process_wait 新增，异步句柄的诚实等待面）；②
+  ssh 桥进程生命周期不得绑请求级 ctx（CommandContext 在 dial 返回时取消
+  = 桥死——实测踩坑两次）；③ e2e：t5_probe/t6_modeflip/t7_tristate/
+  t9_probe/t11_reattach/t10_gate.sh（5 场景 exit code 门禁）全绿；④ 矩阵
+  38-45；⑤ 遗留：companion 自然死亡暂为 exit_unknown（wrapper 属 W4 细
+  化）、iptables 注入场景需 root netns（环境无权限，L2 状态机单测覆盖）、
+  windows companion 矩阵钉 thin
+- 日期: 2026-11-26
