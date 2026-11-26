@@ -18,7 +18,7 @@
 - [x] D-11 durable flag + description honesty → T1
 - [x] D-12 transport (unix socket + direct-tcpip + JSON lines + events) → T4
 - [x] D-13 trust model semi-auto → T5
-- [x] D-14 four waves → this plan's wave structure
+- [x] D-14 four waves → this plan's wave structure, executed as 7 build waves
 - [x] D-15 reinstall pinning sha256 → T5, T10
 - [x] D-16 socket token auth → T4
 - [x] D-17 root guard → T5
@@ -52,7 +52,7 @@
 ### Wave 1 — debt consolidation + docker freedom (T1 → T2 in order — F10 same-file collision)
 
 #### T1: extract pkg/file semantic library + docker exec-channel + durable flag
-- **Covers**: D-04, D-08, D-09, D-10, D-11, D-22, D-28
+- **Covers**: D-04, D-08, D-09, D-10, D-11, D-14, D-22, D-28
 - **Files**: pkg/file/file.go, pkg/file/file_test.go, pkg/container/backend.go, pkg/container/backend_test.go, internal/orchestrator/face.go, internal/mcpserver/tools.go, internal/mcpserver/server.go, pkg/remote/sftp.go
 - **Read first**: pkg/container/backend.go:110-170 (hostPath + normalizeUTF8LF), pkg/remote/sftp.go (its copies of normalize/decode), design/2-architecture/companion-spec.md §D-10/D-11/D-28
 - **Approach**: move semantic funcs verbatim into pkg/file (normalize/decode from container backend, sensitive warnlist from mcpserver tools.go:210); docker ReadFile/WriteFile/Patch gain path branch: /workspace/* → hostPath fast path (unchanged), else exec channel (cat for read; tee to tmp+mv for write; sed-free read-modify-write via exec for patch). Binary sniff (NUL byte in first 8KB) → typed ErrBinary with bounded advice text (D-30 wording). Responses add durable: bool (workspace=work_home subtree for docker; always true for ssh — probe-verified). Stopped-container file ops → typed ErrContainerStopped (status probe first, no auto-start). Table-driven contract test for durable flags + workdir invariant (D-28). FileSearch timeout_seconds param with server-side ceiling later (W2), client clamp 300s now.
