@@ -53,6 +53,96 @@ func (m remoteMachine) Axis() string {
 	return m.axis
 }
 
+// ExecAsync supervises through the companion when active (T11): the handle
+// is the companion's, the ledger row is ours — write-ahead before return
+// (D-06 both axes, same recovery contract).
+func (m remoteMachine) ExecAsync(ctx context.Context, id resource.ResourceID, cmd string) (*container.Handle, error) {
+	if m.cc == nil || m.CompanionState() != "active" {
+		return nil, fmt.Errorf("machine %q: async exec needs an active companion (thin mode is blocking-only)", m.name)
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	res, err := m.cc.Call(ctx2, "exec_async", map[string]any{
+		"cmd": cmd, "request_id": fmt.Sprintf("%s-%d", m.name, time.Now().UnixNano()),
+		"owner_machine": m.name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("companion exec_async: %w", err)
+	}
+	hid, _ := res["handle_id"].(string)
+	pgidF, _ := res["pgid"].(float64)
+	return &container.Handle{
+		ID: hid, EnvID: id, ExecID: hid,
+		PGID:  int(pgidF),
+		Cmd:   cmd,
+		State: container.HandleRunning,
+	}, nil
+}
+
+// Kill routes a group kill through the companion (asyncExecFace's second
+// member); the supervisor refuses wrong-identity kills (D-05's twin).
+func (m remoteMachine) Kill(ctx context.Context, id resource.ResourceID, pid int) error {
+	if m.cc == nil {
+		return fmt.Errorf("machine %q: kill needs a companion channel", m.name)
+	}
+	// address by handle (pid is the docker-axis vocabulary); the supervisor
+	// accepts pgid-addressed kills for cross-axis symmetry
+	ctx2, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	_, err := m.cc.Call(ctx2, "kill", map[string]any{"pgid": pid})
+	return err
+}
+
+// WaitHandle resolves through the companion ledger (sessions.list shaped).
+func (m remoteMachine) WaitHandle(ctx context.Context, handleID string) (*container.Handle, error) {
+	if m.cc == nil {
+		return &container.Handle{ID: handleID, State: container.HandleDead, ExitCode: -1}, nil
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	res, err := m.cc.Call(ctx2, "wait", map[string]any{"handle_id": handleID})
+	if err != nil {
+		return nil, err
+	}
+	st, _ := res["state"].(string)
+	switch {
+	case strings.HasPrefix(st, "exited("):
+		code := 0
+		fmt.Sscanf(st, "exited(%d)", &code)
+		return &container.Handle{ID: handleID, State: container.HandleDead, ExitCode: code}, nil
+	case st == "signaled" || strings.HasPrefix(st, "signaled("):
+		return &container.Handle{ID: handleID, State: container.HandleDead, ExitCode: 137}, nil
+	default:
+		if st == "running" {
+			return &container.Handle{ID: handleID, State: container.HandleRunning}, nil
+		}
+		return &container.Handle{ID: handleID, State: container.HandleDead, ExitCode: -1}, nil
+	}
+}
+
+// ReconcileLedger is the L5 reattach data path (D-06 companion half):
+// sessions.list is the daemon's truth; the caller (orchestrator) merges it
+// into the platform ledger at boot and after reattach.
+func (m remoteMachine) ReconcileLedger(ctx context.Context) ([]map[string]any, error) {
+	if m.cc == nil {
+		return nil, fmt.Errorf("companion absent on %q", m.name)
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	res, err := m.cc.Call(ctx2, "sessions.list", nil)
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := res["sessions"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, r := range raw {
+		if m, ok := r.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
 func (m remoteMachine) Exec(ctx context.Context, id resource.ResourceID, cmd string, opts ...container.ExecOptions) (container.ExecResult, error) {
 	var o container.ExecOptions
 	if len(opts) > 0 {
@@ -122,6 +212,10 @@ func (m remoteMachine) TargetInfo() (string, string) {
 // orchestratorFaceAdapter exposes the orchestrator as the mcpserver contract
 // (face.go interface) — the single seam between the two internal layers.
 type orchestratorFaceAdapter struct{ o *orchestrator.Orchestrator }
+
+func (a orchestratorFaceAdapter) HandleState(handleID string) (map[string]any, error) {
+	return a.o.HandleState(handleID)
+}
 
 func (a orchestratorFaceAdapter) Create(ctx context.Context, opts mcpserver.CreateOpts) (*mcpserver.ResourceMeta, error) {
 	m, err := a.o.Create(ctx, orchestrator.CreateOpts(opts))

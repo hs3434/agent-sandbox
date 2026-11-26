@@ -75,7 +75,7 @@ func (o *Orchestrator) ShellExec(ctx context.Context, machine, shellID string, a
 	if async {
 		af, ok := be.(asyncExecFace)
 		if !ok {
-			return nil, fmt.Errorf("machine %q does not support async exec (ssh thin mode is blocking-only)", target)
+			return nil, fmt.Errorf("machine %q does not support async exec (thin mode is blocking-only; async needs an active companion)", target)
 		}
 		h, err := af.ExecAsync(ctx, id, cmd)
 		if err != nil {
@@ -319,6 +319,21 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 	}
 	if _, ok := out["ssh"]; !ok {
 		out["ssh"] = map[string]any{}
+	}
+	return out, nil
+}
+
+// HandleState resolves one handle's ledger row (process_wait surface).
+func (o *Orchestrator) HandleState(handleID string) (map[string]any, error) {
+	h, err := o.store.GetHandle(handleID)
+	if err != nil {
+		return nil, fmt.Errorf("handle %q unknown (ledger has no such row)", handleID)
+	}
+	out := map[string]any{
+		"handle_id":   h.ID,
+		"state":       h.State,
+		"exit_reason": h.ExitReason,
+		"cmd":         h.Cmd,
 	}
 	return out, nil
 }

@@ -9,14 +9,15 @@ import (
 )
 
 func TestToolFaceComplete(t *testing.T) {
-	// the P0 face: 17 tools / 5 families (spec §4, AD-026/027)
+	// the face: 18 tools / 6 families (spec §4, AD-026/027 + T11 process_wait)
 	srv := New(Deps{}) // no backend wiring — face audit only
 	got := srv.ToolNames()
 	want := []string{
 		// container family (4)
 		"container_create", "container_remove", "container_build", "container_images",
-		// shell family (4)
+		// shell family (4) + process surface (T11)
 		"shell_exec", "shell_new", "shell_remove", "shell_list",
+		"process_wait",
 		// file family (4)
 		"file_read", "file_write", "file_patch", "file_search",
 		// sense family (3)

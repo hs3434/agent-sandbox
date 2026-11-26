@@ -171,6 +171,23 @@ func (s *Supervisor) Wait(handleID string) (*Proc, bool) {
 	return &cp, true
 }
 
+// KillByPgid finds the row owning this pgid (cross-axis kill vocabulary).
+func (s *Supervisor) KillByPgid(pgid int) error {
+	s.mu.Lock()
+	var handleID string
+	for id, p := range s.procs {
+		if p.PGID == pgid {
+			handleID = id
+			break
+		}
+	}
+	s.mu.Unlock()
+	if handleID == "" {
+		return fmt.Errorf("no handle owns pgid %d", pgid)
+	}
+	return s.Kill(handleID)
+}
+
 // Kill signals the process group (identity-checked: the row's pgid must
 // still own /proc/<pgid> — starttime drift makes us refuse rather than
 // wrong-kill, D-05's companion-side twin).

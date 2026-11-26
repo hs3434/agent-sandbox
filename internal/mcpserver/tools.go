@@ -23,6 +23,7 @@ func (s *Server) handlersMap() map[string]func(ctx context.Context, args json.Ra
 		"shell_new":         s.toolShellNew,
 		"shell_remove":      s.toolShellRemove,
 		"shell_list":        s.toolShellList,
+		"process_wait":      s.toolProcessWait,
 		"file_read":         s.toolFileRead,
 		"file_write":        s.toolFileWrite,
 		"file_patch":        s.toolFilePatch,
@@ -181,6 +182,24 @@ func (s *Server) toolShellList(ctx context.Context, args json.RawMessage) (any, 
 }
 
 // ---- file family (foraging) ----
+
+// toolProcessWait resolves an async handle (both axes): ledger row truth —
+// running → state field; dead → terminal state (exited(N)/signaled(N)/
+// exit_unknown). The honest-wait surface for async exec.
+func (s *Server) toolProcessWait(ctx context.Context, args json.RawMessage) (any, error) {
+	if s.deps.Orch == nil {
+		return nil, s.backendUnavailable()
+	}
+	handleID := argStr(args, "handle_id")
+	if handleID == "" {
+		return nil, fmt.Errorf("handle_id is required")
+	}
+	row, err := s.deps.Orch.HandleState(handleID)
+	if err != nil {
+		return nil, err
+	}
+	return row, nil
+}
 
 func (s *Server) toolFileRead(ctx context.Context, args json.RawMessage) (any, error) {
 	if s.deps.Orch == nil {

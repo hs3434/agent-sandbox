@@ -251,6 +251,16 @@ func dispatch(msg *protocol.Message) *protocol.Response {
 		resp.Result = map[string]any{"handle_id": h, "state": p.State, "cmd": p.Cmd}
 	case "kill":
 		h, _ := msg.Params["handle_id"].(string)
+		pgidF, hasPgid := msg.Params["pgid"].(float64)
+		if h == "" && hasPgid {
+			// pgid-addressed kill (cross-axis vocabulary)
+			if err := sup.KillByPgid(int(pgidF)); err != nil {
+				resp.Error = &protocol.ProtoError{Code: "kill_failed", Message: err.Error()}
+				break
+			}
+			resp.Result = map[string]any{"pgid": int(pgidF), "killed": true}
+			break
+		}
 		sup.MarkKilledByUs(h)
 		if err := sup.Kill(h); err != nil {
 			resp.Error = &protocol.ProtoError{Code: "kill_failed", Message: err.Error()}
