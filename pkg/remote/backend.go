@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hs3434/agent-sandbox/pkg/file"
 	"github.com/hs3434/agent-sandbox/pkg/resource"
 )
 
@@ -336,12 +337,12 @@ func (b *Backend) ReadFile(ctx context.Context, machine, path string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return string(decodeText(data)), nil
+	return string(file.DecodeText(data)), nil
 }
 
 // WriteFile writes atomically via SFTP (temp + rename), content normalized.
 func (b *Backend) WriteFile(ctx context.Context, machine, path, content string) error {
-	return b.sftpWrite(ctx, machine, path, normalizeUTF8LF(content))
+	return b.sftpWrite(ctx, machine, path, file.Normalize(content))
 }
 
 // zombieForTest force-corrupts the master socket state (test-only hook for

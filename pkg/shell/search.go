@@ -19,6 +19,7 @@ type SearchParams struct {
 	Offset     int
 	OutputMode string // "content" | "files_only" | "count"
 	Context    int
+	TimeoutSecs int // per-command timeout; 0 = engine default (60s), ceiling 300s (D-27)
 }
 
 // SearchResult is the file_search payload.

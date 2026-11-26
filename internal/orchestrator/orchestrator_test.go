@@ -109,6 +109,7 @@ func newHarness(t *testing.T) *harness {
 		Backend:  fakeAdapter{fb},
 		WorkHome: workHome,
 		Tenant:   "local",
+		Backends: map[string]any{"loop": struct{}{}}, // ssh machine fixture (machine-is-env routes)
 	})
 	if err != nil {
 		t.Fatalf("orchestrator: %v", err)
@@ -445,5 +446,34 @@ func TestInspectIsTheDeepView(t *testing.T) {
 	}
 	if _, ok := ins["network"]; !ok {
 		t.Fatal("inspect must carry the network address too")
+	}
+}
+
+// TestDurableFlagContract (D-28): the fence→safe-box reframing enforced by
+// evidence — docker axis durable ⇔ path under /workspace (the invariant zone);
+// ssh axis durable everywhere (machine-is-env). Table-driven so the contract
+// has teeth.
+func TestDurableFlagContract(t *testing.T) {
+	h := newHarness(t)
+	cases := []struct {
+		machine string
+		path    string
+		want    bool
+		note    string
+	}{
+		{"", "/workspace/a.txt", true, "docker workspace = invariant zone"},
+		{"", "/workspace/deep/nested/cfg.yaml", true, "workspace subtree"},
+		{"", "/workspace", true, "workspace root itself"},
+		{"", "/workspace/../escape", false, "path escape leaves the zone"},
+		{"", "/etc/nginx/nginx.conf", false, "system path = free zone, not durable"},
+		{"", "/var/log/app.log", false, "log path"},
+		{"", "relative/path.txt", false, "relative paths are not the invariant"},
+		{"loop", "/etc/hosts", true, "ssh whole machine durable (machine-is-env)"},
+		{"loop", "/home/u/notes.txt", true, "ssh home durable"},
+	}
+	for _, c := range cases {
+		if got := h.orch.PathDurable(c.machine, c.path); got != c.want {
+			t.Errorf("PathDurable(%q, %q) = %v, want %v (%s)", c.machine, c.path, got, c.want, c.note)
+		}
 	}
 }

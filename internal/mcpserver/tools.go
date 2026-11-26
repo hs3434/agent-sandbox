@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/hs3434/agent-sandbox/pkg/audit"
+	"github.com/hs3434/agent-sandbox/pkg/file"
 	"github.com/hs3434/agent-sandbox/pkg/shell"
 	"github.com/hs3434/agent-sandbox/pkg/store"
 )
@@ -194,7 +194,7 @@ func (s *Server) toolFileRead(ctx context.Context, args json.RawMessage) (any, e
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"path": path, "content": text}, nil
+	return map[string]any{"path": path, "content": text, "durable": s.deps.Orch.PathDurable(argStr(args, "machine"), path)}, nil
 }
 
 func (s *Server) toolFileWrite(ctx context.Context, args json.RawMessage) (any, error) {
@@ -206,8 +206,8 @@ func (s *Server) toolFileWrite(ctx context.Context, args json.RawMessage) (any, 
 		return nil, fmt.Errorf("path is required")
 	}
 	content := argStr(args, "content")
-	res := map[string]any{"path": path, "written": true}
-	if w := sensitivePathWarning(path); w != "" {
+	res := map[string]any{"path": path, "written": true, "durable": s.deps.Orch.PathDurable(argStr(args, "machine"), path)}
+	if w := file.SensitivePath(path); w != "" {
 		res["warning"] = w // advisory, never blocking (safety.py semantics)
 	}
 	if err := s.deps.Orch.FileWrite(ctx, argStr(args, "machine"), path, content); err != nil {
@@ -248,8 +248,9 @@ func (s *Server) toolFileSearch(ctx context.Context, args json.RawMessage) (any,
 		FileGlob:   argStr(args, "file_glob"),
 		Limit:      argInt(args, "limit"),
 		Offset:     argInt(args, "offset"),
-		OutputMode: argStr(args, "output_mode"),
-		Context:    argInt(args, "context"),
+		OutputMode:  argStr(args, "output_mode"),
+		Context:     argInt(args, "context"),
+		TimeoutSecs: argInt(args, "timeout_seconds"),
 	}, argStr(args, "machine"))
 	if err != nil {
 		return nil, err
@@ -274,8 +275,34 @@ func (s *Server) toolStatus(ctx context.Context, args json.RawMessage) (any, err
 	if err != nil {
 		return nil, err
 	}
+	deriveModeStrings(st)
 	st["_events"] = s.piggyback(ctx)
 	return st, nil
+}
+
+// deriveModeStrings renders the machine mode enum into agent-neutral human
+// wording (D-29: never teach install — the trust gate belongs to the operator).
+func deriveModeStrings(st map[string]any) {
+	for axis := range st {
+		rows, ok := st[axis].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, rowAny := range rows {
+			row, ok := rowAny.(map[string]any)
+			if !ok {
+				continue
+			}
+			switch row["mode"] {
+			case "companion":
+				row["mode_detail"] = "sandboxd-server protocol peer active"
+			case "degraded":
+				row["mode_detail"] = "companion unreachable, falling back"
+			case "thin":
+				row["mode_detail"] = "managed by operator"
+			}
+		}
+	}
 }
 
 func (s *Server) toolEvents(ctx context.Context, args json.RawMessage) (any, error) {
@@ -406,25 +433,3 @@ func (s *Server) resolveID(id string) string {
 	return ""
 }
 
-// sensitivePathWarning is the advisory denylist (safety.py semantics —
-// warn and continue, never block).
-func sensitivePathWarning(path string) string {
-	p := strings.ToLower(path)
-	exact := map[string]string{
-		"/etc/shadow": "system credential store", "/etc/passwd": "system account db",
-		"/etc/sudoers": "sudo configuration",
-	}
-	if w, ok := exact[p]; ok {
-		return fmt.Sprintf("%s is a %s — writing here typically overwrites security-sensitive state; proceed explicitly if intended", path, w)
-	}
-	for _, prefix := range []string{"/etc/ssl/private", "/etc/sudoers.d"} {
-		if strings.HasPrefix(p, prefix) {
-			return fmt.Sprintf("%s sits under %s (private keys / credentials); proceed explicitly if intended", path, prefix)
-		}
-	}
-	base := p[strings.LastIndexByte(p, '/')+1:]
-	if strings.HasPrefix(base, ".env") || base == "id_rsa" || base == "id_ed25519" {
-		return fmt.Sprintf("%s looks like a credentials file (.env / private key); proceed explicitly if intended", path)
-	}
-	return ""
-}

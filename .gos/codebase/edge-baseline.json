@@ -1,0 +1,21 @@
+{
+  "current": {
+    "total": 0,
+    "callgraph": 0,
+    "testof_fn": 0,
+    "fns": [],
+    "owners": {},
+    "fp": "e3b0c44298fc1c14",
+    "at": "2026-11-26T05:37:23.649Z"
+  },
+  "peak": {
+    "total": 0,
+    "callgraph": 0,
+    "testof_fn": 0,
+    "fns": [],
+    "owners": {},
+    "fp": "e3b0c44298fc1c14",
+    "at": "2026-11-26T05:37:17.717Z"
+  },
+  "note": "peak rotates ONLY via gos map baseline reset --reason (approve-gated); scan is peak-monotonic (D-30/R-34)"
+}

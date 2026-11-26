@@ -22,6 +22,7 @@ type OrchestratorFace interface {
 	FileWrite(ctx context.Context, machine, path, content string) error
 	FilePatch(ctx context.Context, machine, path, oldS, newS string, all bool) (int, error)
 	FileSearch(ctx context.Context, p shell.SearchParams, machine string) (*shell.SearchResult, error)
+	PathDurable(machine, path string) bool
 	Status(ctx context.Context) (map[string]any, error)
 	Inspect(ctx context.Context, id string) (map[string]any, error)
 	WorkdirFor(name string) string

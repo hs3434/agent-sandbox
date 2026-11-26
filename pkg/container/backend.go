@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"encoding/base64"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -26,6 +27,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 
+	"github.com/hs3434/agent-sandbox/pkg/file"
 	"github.com/hs3434/agent-sandbox/pkg/resource"
 )
 
@@ -529,35 +531,119 @@ func (b *Backend) WaitHandle(ctx context.Context, handleID string) (*Handle, err
 	return &Handle{ID: handleID, State: HandleDead, ExitCode: insp.ExitCode}, nil
 }
 
-// ReadFile reads a file inside the workdir.
-func (b *Backend) ReadFile(ctx context.Context, id resource.ResourceID, path string) (string, error) {
-	host, err := b.hostPath(b.containerName(id), path)
-	if err != nil {
-		return "", err
-	}
-	raw, err := os.ReadFile(host)
-	if err != nil {
-		return "", fmt.Errorf("read %q: %w", path, err)
-	}
-	return string(decodeText(raw)), nil
+// ErrBinary is returned when file_read hits a binary file (D-08): honest
+// refusal with bounded advice — the agent has the shell escape hatch.
+var ErrBinary = fmt.Errorf("binary file: file_read is text-only (bound: single file < %s); use shell_exec with base64/tar for binary content", "10MB")
+
+// ErrContainerStopped is returned when file ops target a stopped container
+// (D-22): explicit error, never a silent auto-start (start is the agent's
+// chosen action via shell_exec or container lifecycle).
+var ErrContainerStopped = fmt.Errorf("container_stopped: file operations need a running container; start it explicitly first")
+
+// underWorkspace reports whether the agent path lives in the bind-mount —
+// the one zone with a deterministic container→host translation (fast path).
+func underWorkspace(path string) bool {
+	rel := strings.TrimPrefix(filepath.ToSlash(path), WorkdirInContainer)
+	return rel != "" && strings.HasPrefix(rel, "/") || rel != ""
 }
 
-// WriteFile atomically writes a file inside the workdir (temp + rename within
-// the same directory), content normalized to UTF-8 LF no BOM.
-func (b *Backend) WriteFile(ctx context.Context, id resource.ResourceID, path, content string) error {
-	host, err := b.hostPath(b.containerName(id), path)
+// readFileViaExec reads any container-namespace path through exec (D-10).
+// base64 is the binary-safe bridge; output decodes then normalizes.
+func (b *Backend) readFileViaExec(ctx context.Context, name, path string) (string, error) {
+	cmd := fmt.Sprintf("test -f %s || echo __NOFILE__; base64 %s 2>/dev/null | tr -d '\n'", shellQuote(path), shellQuote(path))
+	out, err := b.execSimple(ctx, name, cmd)
 	if err != nil {
+		return "", fmt.Errorf("exec read %q: %w", path, err)
+	}
+	out = strings.TrimSpace(out)
+	if strings.HasPrefix(out, "__NOFILE__") {
+		return "", fmt.Errorf("read %q: not a regular file", path)
+	}
+	raw, err := base64.StdEncoding.DecodeString(out)
+	if err != nil {
+		return "", fmt.Errorf("read %q: decode: %w", path, err)
+	}
+	if file.IsBinary(raw) {
+		return "", ErrBinary
+	}
+	return string(file.DecodeText(raw)), nil
+}
+
+// writeFileViaExec writes any container-namespace path through exec:
+// stdin-free — content travels as base64 inside the command, staged to a
+// same-dir temp then mv (atomicity mirror of the host fast path).
+func (b *Backend) writeFileViaExec(ctx context.Context, name, path, content string) error {
+	if len(content) > file.MaxFileBytes {
+		return fmt.Errorf("content exceeds the %d MB file cap (D-07)", file.MaxFileBytes/(1024*1024))
+	}
+	b64 := base64.StdEncoding.EncodeToString(file.Normalize(content))
+	dir := filepath.ToSlash(filepath.Dir(path))
+	tmp := path + ".tmp-write"
+	cmd := fmt.Sprintf("mkdir -p %s && echo %s | base64 -d > %s && mv %s %s",
+		shellQuote(dir), shellQuote(b64), shellQuote(tmp), shellQuote(tmp), shellQuote(path))
+	if _, err := b.execSimple(ctx, name, cmd); err != nil {
+		return fmt.Errorf("exec write %q: %w", path, err)
+	}
+	return nil
+}
+
+// ensureRunning guards file ops against stopped containers (D-22).
+func (b *Backend) ensureRunning(ctx context.Context, name string) error {
+	insp, err := b.cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return fmt.Errorf("inspect %q: %w", name, err)
+	}
+	if insp.State == nil || !insp.State.Running {
+		return ErrContainerStopped
+	}
+	return nil
+}
+
+// ReadFile reads a file inside the container (D-09/D-10 dual track):
+// /workspace/* takes the host fast path (bind-mount translation), every
+// other container-namespace path goes through exec. Binary content is
+// refused with bounded advice (D-08).
+func (b *Backend) ReadFile(ctx context.Context, id resource.ResourceID, path string) (string, error) {
+	name := b.containerName(id)
+	host, hostErr := b.hostPath(name, path)
+	if hostErr == nil {
+		raw, err := os.ReadFile(host)
+		if err == nil {
+			if file.IsBinary(raw) {
+				return "", ErrBinary
+			}
+			return string(file.DecodeText(raw)), nil
+		}
+		// missing file inside a translated path: fall through to exec for a
+		// namespace-truthful error (the host view may lag the container)
+	}
+	if err := b.ensureRunning(ctx, name); err != nil {
+		return "", err
+	}
+	return b.readFileViaExec(ctx, name, path)
+}
+
+// WriteFile writes a file inside the container (dual track mirroring
+// ReadFile); content normalized to UTF-8 LF no BOM either way.
+func (b *Backend) WriteFile(ctx context.Context, id resource.ResourceID, path, content string) error {
+	name := b.containerName(id)
+	host, hostErr := b.hostPath(name, path)
+	if hostErr == nil {
+		if err := os.MkdirAll(filepath.Dir(host), 0o755); err == nil {
+			data := file.Normalize(content)
+			tmp := host + ".tmp-write"
+			if err := os.WriteFile(tmp, data, 0o644); err == nil {
+				if err := os.Rename(tmp, host); err == nil {
+					return nil // fast path landed
+				}
+				os.Remove(tmp)
+			}
+		}
+	}
+	if err := b.ensureRunning(ctx, name); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(host), 0o755); err != nil {
-		return fmt.Errorf("mkdir: %w", err)
-	}
-	data := normalizeUTF8LF(content)
-	tmp := host + ".tmp-write"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("stage: %w", err)
-	}
-	return os.Rename(tmp, host) // atomic within the same filesystem
+	return b.writeFileViaExec(ctx, name, path, content)
 }
 
 // BuildOptions tunes container_build.

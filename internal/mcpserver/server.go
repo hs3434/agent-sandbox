@@ -94,7 +94,7 @@ func (s *Server) build() {
 	add("file_search", "Search file contents (substring/regex) or list files by glob under a directory. Args: pattern (required), path (dir), search_type content|files, machine.")
 
 	// —— sense family (read-only observation) ——
-	add("status", "Full-body read (always true, platform-computed): all envs with lifecycle/backend, process handles alive/dead, capabilities, machines with connection state, default env. Call this first after any wake. No args.")
+	add("status", "Full-body read (always true, platform-computed): all envs with lifecycle/backend, process handles alive/dead, capabilities, machines with connection state and mode, default env. Call this first after any wake. No args.")
 	add("events", "Replay body events since after_seq (process death, state transitions, disconnections, self-healing). Args: after_seq (int; 0 = from start).")
 	add("resource_inspect", "Deep inspection of one resource (default: current env). Args: id (optional).")
 

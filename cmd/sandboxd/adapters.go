@@ -144,6 +144,10 @@ func (a orchestratorFaceAdapter) FileSearch(ctx context.Context, p shell.SearchP
 	return a.o.FileSearch(ctx, p, machine)
 }
 
+func (a orchestratorFaceAdapter) PathDurable(machine, path string) bool {
+	return a.o.PathDurable(machine, path)
+}
+
 func (a orchestratorFaceAdapter) Status(ctx context.Context) (map[string]any, error) {
 	return a.o.Status(ctx)
 }

@@ -186,8 +186,12 @@ func (o *Orchestrator) FileSearch(ctx context.Context, p shell.SearchParams, mac
 	}
 	id := o.idFor(name)
 	d := o.dialectFor(name)
+	searchTimeout := 60 * time.Second
+	if p.TimeoutSecs > 0 {
+		searchTimeout = time.Duration(min(p.TimeoutSecs, 300)) * time.Second // D-27 ceiling
+	}
 	out, err := shell.Search(ctx, func(ctx context.Context, cmd string) (string, int, error) {
-		r, err := ef.Exec(ctx, id, cmd, container.ExecOptions{Timeout: 60 * time.Second})
+		r, err := ef.Exec(ctx, id, cmd, container.ExecOptions{Timeout: searchTimeout})
 		if err != nil {
 			return "", 0, err
 		}
@@ -281,6 +285,10 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 		if h, ok := be.(interface{ Health() string }); ok {
 			row["state"] = h.Health()
 		}
+		// machine mode enum (T2, D-01/D-29): companion lands in W2+; P0/W1
+		// ships the enum field with thin as the only producer. Agent-neutral
+		// wording lives in the renderer (status tool), never install hints.
+		row["mode"] = o.machineMode(name)
 		axis := "ssh"
 		if k, ok := be.(interface{ Axis() string }); ok {
 			axis = k.Axis()
@@ -313,6 +321,28 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 		out["ssh"] = map[string]any{}
 	}
 	return out, nil
+}
+
+// MachineMode is the T2 enum: thin = ssh passthrough (managed by operator),
+// companion = sandboxd-server protocol peer, degraded = companion expected
+// but unreachable. Rendering derives human strings from the enum value —
+// the flip logic (W2+) only ever changes the enum, never prose.
+type MachineMode string
+
+const (
+	ModeThin      MachineMode = "thin"
+	ModeCompanion MachineMode = "companion"
+	ModeDegraded  MachineMode = "degraded"
+)
+
+// machineMode resolves the current mode enum for a machine (T2).
+func (o *Orchestrator) machineMode(name string) MachineMode {
+	if mc, ok := o.backends[name]; ok {
+		if c, ok := mc.(interface{ CompanionState() string }); ok && c.CompanionState() == "active" {
+			return ModeCompanion
+		}
+	}
+	return ModeThin
 }
 
 // Inspect is the deep single-resource view (§4.3): identity, provenance,
@@ -356,6 +386,24 @@ func (o *Orchestrator) Inspect(ctx context.Context, id string) (map[string]any, 
 // WorkdirFor exposes the invariant (tool responses tell the agent where files live).
 func (o *Orchestrator) WorkdirFor(name string) string {
 	return filepath.Join(o.workHome, name)
+}
+
+// PathDurable is the D-11 honesty flag: docker axis — durable iff the path
+// lives in the bind-mount (workspace; the invariant f(work_home, env_name)
+// zone that survives rebuild); ssh axis — the whole machine is durable
+// (machine-is-env). Never blocks: pure disclosure.
+func (o *Orchestrator) PathDurable(machine, path string) bool {
+	name := o.machineOrDefault(machine)
+	if _, isRemote := o.backends[name]; isRemote {
+		return true
+	}
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/workspace") {
+		return false
+	}
+	// resolve .. segments: /workspace/../escape must NOT count (D-28 case)
+	resolved := filepath.Clean(p)
+	return resolved == "/workspace" || strings.HasPrefix(resolved, "/workspace/")
 }
 
 // routing ----------------------------------------------------------------

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hs3434/agent-sandbox/pkg/file"
 	"github.com/hs3434/agent-sandbox/pkg/resource"
 )
 
@@ -117,9 +118,9 @@ func TestEncodingLayerWindows(t *testing.T) {
 			t.Errorf("mapCodepage(%q) = %q, want %q", c.cp, got, c.want)
 		}
 	}
-	// GBK decode roundtrip (m3b ships the table; encoding_test covers it)
-	if got := decodeGBK([]byte{0xC4, 0xE3, 0xBA, 0xC3}); got != "你好" {
-		t.Fatalf("gbk decode = %q", got)
+	// GBK decode now lives in pkg/file (unified semantic library, T1)
+	if got := string(file.DecodeText([]byte{0xC4, 0xE3, 0xBA, 0xC3})); got != "你好" {
+		t.Fatalf("gbk decode via pkg/file = %q", got)
 	}
 }
 
