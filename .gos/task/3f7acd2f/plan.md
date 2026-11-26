@@ -95,7 +95,9 @@
 
 ### Wave 3 — companion server binary
 
-#### T7 (Wave 2): container-side async parity fixes (docker axis contract alignment)
+#### T7: container-side async parity fixes
+
+> Wave 2 (parallel with T4/T5/T6) (docker axis contract alignment)
 - **Covers**: D-03, D-05 (docker side), D-06 (docker side)
 - **Files**: pkg/container/backend.go, pkg/container/backend_test.go
 - **Read first**: pkg/container/backend.go ExecAsync/reaper (lines ~388-470), D-05/D-21
@@ -103,7 +105,9 @@
 - **Done when**: `go test ./pkg/container/` green incl. golden starttime tests + tri-state matrix test; e2e async ledger shows real exit code for `sh -c 'exit 7'`; docker rm -f mid-run → exit_unknown (not 0)
 - **Depends on**: none (F14: exit wrapper is in-container sh + ledger scan — no pkg/file symbols consumed)
 
-#### T8 (Wave 5): companion supervisor — process table, async/wait/kill, caps
+#### T8: companion supervisor — process table, async/wait/kill, caps
+
+> Wave 5 (after T8 deps)
 - **Covers**: D-06, D-19, D-21, D-23, D-24
 - **Files**: pkg/companion/supervisor.go, pkg/companion/supervisor_test.go, cmd/sandboxd-server/main.go
 - **Read first**: T4 protocol, T5 server main, pkg/container/backend.go ExecAsync (the pattern being ported), D-06/D-19/D-21/D-23/D-24
@@ -114,7 +118,9 @@
 ### Wave 4 — client + machine mode flip
 
 
-#### T9 (Wave 6): file protocolization (companion serves pkg/file semantics)
+#### T9: file protocolization (companion serves pkg/file semantics)
+
+> Wave 6
 - **Covers**: D-01, D-07, D-08, D-09, D-27
 - **Files**: pkg/companion/filesvc.go, cmd/sandboxd-server/main.go, pkg/remote/companion_client.go, internal/mcpserver/tools.go
 - **Read first**: pkg/file/* (from T1), T6 client, D-01/D-07/D-08/D-27
@@ -122,7 +128,9 @@
 - **Done when**: e2e: file_write/read/patch/search on loopback machine → audit trail shows protocol path (mode:companion), durable flags present; 11MB write → protocol cap error; binary read → typed rejection with bounded advice; stop companion → file ops still work via SFTP fallback (thin)
 - **Depends on**: T8
 
-#### T10 (Wave 7): red-team gate harness + reinstall pinning e2e + wording sweep
+#### T10: red-team gate harness + reinstall pinning e2e + wording sweep
+
+> Wave 7 (final)
 - **Covers**: D-02, D-15, D-26, D-29, D-30
 - **Files**: docs/verification/feature-test-matrix.md, internal/mcpserver/server.go
 - **Read first**: D-26 list (the three named scenarios), D-15 cap semantics, truths T1-T5
@@ -130,7 +138,9 @@
 - **Done when**: all named injection scenarios pass; `gos gate coverage` exit 0; truths T1-T5 verifiable with these scripts as artifacts
 - **Depends on**: T9, T11
 
-#### T11 (Wave 6): client L5 reattach + ledger reconcile (companion half of D-02/D-21)
+#### T11: client L5 reattach + ledger reconcile (companion half of D-02/D-21)
+
+> Wave 6
 - **Covers**: D-02 (reattach mechanism), D-06 (reconcile via sessions.list), D-21 (tri-state on reattach)
 - **Files**: pkg/remote/companion_client.go, internal/orchestrator/face.go
 - **Read first**: T6 client, T8 sessions.list, T7 MarkHandleDead

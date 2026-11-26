@@ -56,10 +56,10 @@
       "title": "Docker axis does NOT deploy companion; unify contract vocabulary not deployments",
       "rationale": "Chosen over companion for both axes / daemon-as-companion for docker — why-not: zero-value hop; daemon already resident peer with process registry+events",
       "birth_phase": "P0",
-      "status": "open",
+      "status": "covered",
       "anchor": null,
       "covered": true,
-      "covered_by": "T1, T7"
+      "covered_by": "P0:T7"
     },
     {
       "id": "D-04",
@@ -76,10 +76,10 @@
       "title": "pid truth: handoff capture + starttime identity + pidfd endgame; exit code via wrapper file",
       "rationale": "Chosen over trust pid blindly / handoff+starttime+pidfd — why-not: pid reuse breaks kill -0; wrong-kill is the worst outcome",
       "birth_phase": "P0",
-      "status": "open",
+      "status": "covered",
       "anchor": null,
       "covered": true,
-      "covered_by": "T6, T7"
+      "covered_by": "P0:T7"
     },
     {
       "id": "D-06",
@@ -96,10 +96,10 @@
       "title": "Large files: whole-file base64 + 10MB cap; streaming deferred",
       "rationale": "Chosen over chunked streaming now / cap+defer — why-not: agent files are configs/code; YAGNI",
       "birth_phase": "P0",
-      "status": "open",
+      "status": "covered",
       "anchor": null,
       "covered": true,
-      "covered_by": "T9"
+      "covered_by": "P0:T9"
     },
     {
       "id": "D-08",
@@ -166,10 +166,10 @@
       "title": "Four waves: pkg/file+docker-exec-channel / companion skeleton / supervisor+ledger / files protocol",
       "rationale": "Chosen over one big bang / four independent waves — why-not: each wave verifiable+committable; build context last",
       "birth_phase": "P0",
-      "status": "open",
+      "status": "covered",
       "anchor": null,
       "covered": true,
-      "covered_by": "T1"
+      "covered_by": "P0:T1"
     },
     {
       "id": "D-15",
@@ -216,10 +216,10 @@
       "title": "exec idempotency: client-request-id + TTL dedup; L3 errors carry surviving handle_id",
       "rationale": "Chosen over at-least-once raw / idempotent exec — why-not: heartbeat false-positive -> retry -> duplicate rsync/apply race (RT R2-3)",
       "birth_phase": "P0",
-      "status": "open",
+      "status": "covered",
       "anchor": null,
       "covered": true,
-      "covered_by": "T6, T8"
+      "covered_by": "P0:T8"
     },
     {
       "id": "D-20",
@@ -256,20 +256,20 @@
       "title": "companion boot rescans handle dirs (symmetric self-heal); GC never deletes live-pid dirs (injection test)",
       "rationale": "Chosen over memory-only table / disk-backed + rescan — why-not: companion crash loses pgid bindings; mtime GC kills running daemon dir (RT R3-2)",
       "birth_phase": "P0",
-      "status": "open",
+      "status": "covered",
       "anchor": null,
       "covered": true,
-      "covered_by": "T8"
+      "covered_by": "P0:T8"
     },
     {
       "id": "D-24",
       "title": "Per-machine process cap (default 256) enforced at exec-async; O(1) fd/handle stress gate 1k",
       "rationale": "Chosen over uncapped / hard cap — why-not: agent loop -> fd exhaustion -> fake machine-down -> reconnect storm (RT R3-3)",
       "birth_phase": "P0",
-      "status": "open",
+      "status": "covered",
       "anchor": null,
       "covered": true,
-      "covered_by": "T8"
+      "covered_by": "P0:T8"
     },
     {
       "id": "D-25",
@@ -286,10 +286,10 @@
       "title": "Injection test gates: kill -9 companion->L5 reattach; iptables drop-><=15s+handle_id; mismatch->thin",
       "rationale": "Chosen over prose five layers / named injection harness — why-not: unverifiable = unconstrained (RT R3-5)",
       "birth_phase": "P0",
-      "status": "open",
+      "status": "covered",
       "anchor": null,
       "covered": true,
-      "covered_by": "T10"
+      "covered_by": "P0:T10"
     },
     {
       "id": "D-28",
