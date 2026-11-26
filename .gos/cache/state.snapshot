@@ -1,0 +1,335 @@
+{
+  "schema_version": 6,
+  "repo_id": "a78c63fbf7c766cd",
+  "level": 3,
+  "current_stage": "INTENT",
+  "completed_stages": [],
+  "intent": {
+    "summary": "[zh content moved to companion-spec.md]",
+    "confirmed": true,
+    "confirmation": {
+      "mode": "headless-auto",
+      "ts": "2026-11-26T03:34:36.276Z"
+    }
+  },
+  "approvals": {
+    "THINK": "2026-11-26T03:43:55.274Z"
+  },
+  "spec_path": ".gos/task/3f7acd2f/spec.md",
+  "plan_path": ".gos/task/3f7acd2f/plan.md",
+  "project": false,
+  "requirements": [
+    {
+      "id": "R-01",
+      "text": "[zh content moved to companion-spec.md]",
+      "phase": null,
+      "level": 3
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D-01",
+      "title": "Name sandboxd-server; files via protocol; SFTP demoted to bootstrap; thin fallback",
+      "rationale": "Chosen over stdio on ssh channel / unix socket+direct-tcpip \u2014 why-not: L4 would die with connection \u2014 tunnel in JSON, not protocol dialogue",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-02",
+      "title": "vscode lifecycle: version handshake/auto-reinstall pin/single connection+events/discovery/reattach/idle TTL/GC",
+      "rationale": "Chosen over build our own lifecycle / adopt vscode semantics verbatim \u2014 why-not: proven mechanics; commit-pin becomes proto_version handshake",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-03",
+      "title": "Docker axis does NOT deploy companion; unify contract vocabulary not deployments",
+      "rationale": "Chosen over companion for both axes / daemon-as-companion for docker \u2014 why-not: zero-value hop; daemon already resident peer with process registry+events",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-04",
+      "title": "workdir: fence -> safe-box; invariant unchanged, role = durability guarantee only",
+      "rationale": "Chosen over keep fence / keep invariant, drop permission semantics \u2014 why-not: agent freedom; bind-mount translation stays as fast-path basis",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-05",
+      "title": "pid truth: handoff capture + starttime identity + pidfd endgame; exit code via wrapper file",
+      "rationale": "Chosen over trust pid blindly / handoff+starttime+pidfd \u2014 why-not: pid reuse breaks kill -0; wrong-kill is the worst outcome",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-06",
+      "title": "One supervisor loop + machine process table; batch probe O(1); restart reconciliation",
+      "rationale": "Chosen over observer per handle / single supervisor \u2014 why-not: per-handle observers amplify on ssh; table feeds L5 reattach",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-07",
+      "title": "Large files: whole-file base64 + 10MB cap; streaming deferred",
+      "rationale": "Chosen over chunked streaming now / cap+defer \u2014 why-not: agent files are configs/code; YAGNI",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-08",
+      "title": "Binary read: detect and reject with bounded exec-pipe advice",
+      "rationale": "Chosen over auto base64 everything / reject+advise \u2014 why-not: context tax of misread binaries; honest refusal",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-09",
+      "title": "Path freedom both axes: whole machine / whole container namespace",
+      "rationale": "Chosen over workdir-only files / full-path freedom \u2014 why-not: machine-is-env; user ruling: capability liberation",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-10",
+      "title": "docker non-workspace via exec channel; workspace keeps host fast path",
+      "rationale": "Chosen over exec for everything / dual-track \u2014 why-not: bind-mount translation is real physics worth using",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-11",
+      "title": "durable flag on file ops + description honesty",
+      "rationale": "Chosen over silent freedom / disclose durability \u2014 why-not: freedom misread as persistence = surprise data loss",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-12",
+      "title": "unix socket + ssh direct-tcpip; JSON lines + request-id + server events",
+      "rationale": "Chosen over TCP+token / socket+tunnel \u2014 why-not: no new ports; auth rides ssh; L4 natural",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-13",
+      "title": "Trust: semi-auto default (human confirms start); full-auto config default OFF",
+      "rationale": "Chosen over full auto vscode-style / semi-auto default \u2014 why-not: deploy-time gate, not per-op review \u2014 philosophy compatible",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-14",
+      "title": "Four waves: pkg/file+docker-exec-channel / companion skeleton / supervisor+ledger / files protocol",
+      "rationale": "Chosen over one big bang / four independent waves \u2014 why-not: each wave verifiable+committable; build context last",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-15",
+      "title": "Reinstall pinning: sha256+approver audited at first deploy; auto-install only pinned hash; cap 2 then thin-lock",
+      "rationale": "Chosen over auto reinstall on mismatch / pinned reinstall \u2014 why-not: D-02 x D-13 = permanent unattended deploy channel (RT R1-1 critical)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-16",
+      "title": "Socket auth: random token in conn.json 0600 + dir 0700; fail-closed handshake",
+      "rationale": "Chosen over trust local users / token auth \u2014 why-not: any local process could own a full exec/file daemon (RT R1-2 critical)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-17",
+      "title": "Reject uid0 unless allow_root; companion_uid in status; unprivileged install guide",
+      "rationale": "Chosen over allow root / root guard \u2014 why-not: humans paste sudo by default; agent reach = companion privilege (RT R1-5)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-18",
+      "title": "conn.json atomic write; corrupt state -> probe->adopt->thin (never reinstall); owner_id isolation",
+      "rationale": "Chosen over reinstall on any anomaly / degrade chain + owner isolation \u2014 why-not: heaviest op never as UNKNOWN fallback; two daemons = corruption mode (RT R2-1/2)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-19",
+      "title": "exec idempotency: client-request-id + TTL dedup; L3 errors carry surviving handle_id",
+      "rationale": "Chosen over at-least-once raw / idempotent exec \u2014 why-not: heartbeat false-positive -> retry -> duplicate rsync/apply race (RT R2-3)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-20",
+      "title": "starttime parser spec (last-paren split + golden tests); os/arch in handshake; platform matrix first-class",
+      "rationale": "Chosen over implicit linux assumption / explicit matrix \u2014 why-not: comm parsing trap -> wrong-kill; Windows lacks socket//proc/pidfd (RT R2-4/R3-1)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-21",
+      "title": "Terminal tri-state: exited(code)|signaled(sig)|exit_unknown; never coerce to 0",
+      "rationale": "Chosen over code-or-zero / tri-state \u2014 why-not: missing exit file must stay honest ledger fact (RT R2-5)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-22",
+      "title": "Capability probe at declare-time; container_stopped explicit error",
+      "rationale": "Chosen over assume sshd defaults / probe + explicit container_stopped \u2014 why-not: disabled forwarding = undefined mode; silent docker start = destructive surprise (RT R2-6)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-23",
+      "title": "companion boot rescans handle dirs (symmetric self-heal); GC never deletes live-pid dirs (injection test)",
+      "rationale": "Chosen over memory-only table / disk-backed + rescan \u2014 why-not: companion crash loses pgid bindings; mtime GC kills running daemon dir (RT R3-2)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-24",
+      "title": "Per-machine process cap (default 256) enforced at exec-async; O(1) fd/handle stress gate 1k",
+      "rationale": "Chosen over uncapped / hard cap \u2014 why-not: agent loop -> fd exhaustion -> fake machine-down -> reconnect storm (RT R3-3)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-25",
+      "title": "Bidirectional max_line_bytes=32MB with framing error; conformance test",
+      "rationale": "Chosen over unbounded lines / bounded framing \u2014 why-not: 10MB b64 = 13.7MB line; bufio 64KB silent truncation classic (RT R3-4)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-26",
+      "title": "Injection test gates: kill -9 companion->L5 reattach; iptables drop-><=15s+handle_id; mismatch->thin",
+      "rationale": "Chosen over prose five layers / named injection harness \u2014 why-not: unverifiable = unconstrained (RT R3-5)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-28",
+      "title": "durable invariant contract gate: table-driven durable flags + workdir invariant test",
+      "rationale": "Chosen over narrative only / evidence gate \u2014 why-not: reframing enforced by test not prose (RT R3-7)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-29",
+      "title": "status wording agent-neutral: 'mode: thin (managed by operator)'; descriptions never teach install",
+      "rationale": "Chosen over install hints in desc / neutral wording \u2014 why-not: agents would self-install past the human trust gate (RT R1-6)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-30",
+      "title": "Bounded danger advice (<10MB single file); all platform-printed commands via quoting fn + contract test",
+      "rationale": "Chosen over free-text advice / bounded + quoted \u2014 why-not: weak models run tar on /; unquoted interpolation is the injection vector (RT R1-4)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    },
+    {
+      "id": "D-27",
+      "title": "Cap enforced at protocol layer; search ceiling 300s; trust row in audit; quiet logging + level in handshake",
+      "rationale": "Chosen over client-side checks / server-side enforcement \u2014 why-not: second client bypasses client checks; privacy asymmetry must be stated (RT R1-3/R3-6)",
+      "birth_phase": "P0",
+      "status": "open",
+      "anchor": null,
+      "covered": false,
+      "covered_by": null
+    }
+  ],
+  "observable_truths": [],
+  "gaps": [],
+  "activation_source": "headless",
+  "task_head": "3f7acd2fab7295a75e128786fb55e252922a723e"
+}
