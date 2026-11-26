@@ -456,13 +456,83 @@
           "internal/orchestrator/face.go"
         ],
         "wave": 2
+      },
+      {
+        "id": "T7",
+        "covers": [
+          "D-03",
+          "D-05",
+          "D-06"
+        ],
+        "files": [
+          "pkg/container/backend.go",
+          "pkg/container/backend_test.go",
+          "pkg/container/starttime_test.go"
+        ]
+      },
+      {
+        "id": "T8",
+        "covers": [
+          "D-06",
+          "D-19",
+          "D-21",
+          "D-23",
+          "D-24"
+        ],
+        "files": [
+          "pkg/companion/supervisor.go",
+          "pkg/companion/supervisor_test.go",
+          "cmd/sandboxd-server/main.go"
+        ]
+      },
+      {
+        "id": "T9",
+        "covers": [
+          "D-01",
+          "D-07",
+          "D-08",
+          "D-09",
+          "D-27"
+        ],
+        "files": [
+          "pkg/companion/filesvc.go",
+          "cmd/sandboxd-server/main.go",
+          "pkg/remote/companion_client.go",
+          "internal/mcpserver/tools.go"
+        ]
+      },
+      {
+        "id": "T10",
+        "covers": [
+          "D-02",
+          "D-15",
+          "D-26",
+          "D-29",
+          "D-30"
+        ],
+        "files": [
+          "design/3-verification/feature-test-matrix.md",
+          "internal/mcpserver/server.go"
+        ]
+      },
+      {
+        "id": "T11",
+        "covers": [
+          "D-02",
+          "D-06",
+          "D-21"
+        ],
+        "files": [
+          "pkg/remote/companion_client.go",
+          "internal/orchestrator/face.go"
+        ]
       }
     ],
     "audit": [],
     "meta": {
       "waveValidation": {
         "ok": true,
-        "waves": 4
+        "waves": 7
       }
     }
   },
