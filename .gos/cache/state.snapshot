@@ -2,7 +2,7 @@
   "schema_version": 6,
   "repo_id": "a78c63fbf7c766cd",
   "level": 3,
-  "current_stage": "THINK",
+  "current_stage": "PLAN",
   "completed_stages": [
     "THINK"
   ],
@@ -15,7 +15,8 @@
     }
   },
   "approvals": {
-    "THINK": "2026-11-26T03:43:55.274Z"
+    "THINK": "2026-11-26T03:43:55.274Z",
+    "PLAN": "2026-11-26T05:29:09.315Z"
   },
   "spec_path": ".gos/task/3f7acd2f/spec.md",
   "plan_path": ".gos/task/3f7acd2f/plan.md",
@@ -36,8 +37,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T2, T9"
     },
     {
       "id": "D-02",
@@ -46,8 +47,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T5, T6, T10, T11"
     },
     {
       "id": "D-03",
@@ -56,8 +57,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1, T7"
     },
     {
       "id": "D-04",
@@ -66,8 +67,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1, T7"
     },
     {
       "id": "D-05",
@@ -76,8 +77,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T6, T7"
     },
     {
       "id": "D-06",
@@ -86,8 +87,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T6, T7, T8, T11"
     },
     {
       "id": "D-07",
@@ -96,8 +97,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T9"
     },
     {
       "id": "D-08",
@@ -106,8 +107,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1, T9"
     },
     {
       "id": "D-09",
@@ -116,8 +117,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1, T7"
     },
     {
       "id": "D-10",
@@ -126,8 +127,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1"
     },
     {
       "id": "D-11",
@@ -136,8 +137,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1"
     },
     {
       "id": "D-12",
@@ -146,8 +147,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T4"
     },
     {
       "id": "D-13",
@@ -156,8 +157,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T5"
     },
     {
       "id": "D-14",
@@ -166,8 +167,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1"
     },
     {
       "id": "D-15",
@@ -176,8 +177,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T5, T10"
     },
     {
       "id": "D-16",
@@ -186,8 +187,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T4, T5"
     },
     {
       "id": "D-17",
@@ -196,8 +197,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T5"
     },
     {
       "id": "D-18",
@@ -206,8 +207,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T4, T5"
     },
     {
       "id": "D-19",
@@ -216,8 +217,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T6, T8"
     },
     {
       "id": "D-20",
@@ -226,8 +227,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T4, T6"
     },
     {
       "id": "D-21",
@@ -236,8 +237,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T6, T7, T8, T11"
     },
     {
       "id": "D-22",
@@ -246,8 +247,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1, T7"
     },
     {
       "id": "D-23",
@@ -256,8 +257,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T8"
     },
     {
       "id": "D-24",
@@ -266,8 +267,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T8"
     },
     {
       "id": "D-25",
@@ -276,8 +277,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T4"
     },
     {
       "id": "D-26",
@@ -286,8 +287,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T10"
     },
     {
       "id": "D-28",
@@ -296,8 +297,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T1"
     },
     {
       "id": "D-29",
@@ -306,8 +307,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T2, T10"
     },
     {
       "id": "D-30",
@@ -316,8 +317,8 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T5, T10"
     },
     {
       "id": "D-27",
@@ -326,11 +327,42 @@
       "birth_phase": "P0",
       "status": "open",
       "anchor": null,
-      "covered": false,
-      "covered_by": null
+      "covered": true,
+      "covered_by": "T5, T9"
     }
   ],
-  "observable_truths": [],
+  "observable_truths": [
+    {
+      "id": "T1",
+      "description": "bootstrap writes conn.json (0600) with token; sandboxd reports mode:companion in status",
+      "verified": false,
+      "evidence": null
+    },
+    {
+      "id": "T2",
+      "description": "async exec on companion machine returns handle; after process death ledger row flips dead with honest terminal state; visible via events",
+      "verified": false,
+      "evidence": null
+    },
+    {
+      "id": "T3",
+      "description": "iptables drop: in-flight exec fails fast with handle_id; machine disconnected <=15s; on recovery L5 reattach and handle remains waitable",
+      "verified": false,
+      "evidence": null
+    },
+    {
+      "id": "T4",
+      "description": "docker container non-workspace path file_read/file_write succeed via exec channel; workspace keeps host fast path; responses carry durable flag",
+      "verified": false,
+      "evidence": null
+    },
+    {
+      "id": "T5",
+      "description": "proto mismatch with pinned sha256 reinstalls; unpinned hash falls back to thin with needs_reinstall; cap 2 then thin-lock",
+      "verified": false,
+      "evidence": null
+    }
+  ],
   "gaps": [],
   "activation_source": "headless",
   "task_head": "3f7acd2fab7295a75e128786fb55e252922a723e",
