@@ -2,10 +2,11 @@
   "schema_version": 6,
   "repo_id": "a78c63fbf7c766cd",
   "level": 3,
-  "current_stage": "BUILD",
+  "current_stage": "REVIEW",
   "completed_stages": [
     "THINK",
-    "PLAN"
+    "PLAN",
+    "BUILD"
   ],
   "intent": {
     "summary": "[zh content moved to companion-spec.md]",
@@ -628,6 +629,13 @@
       "done": "",
       "remaining": "",
       "at": "2026-11-26T09:02:15.020Z"
+    },
+    {
+      "stage": "BUILD",
+      "unit": "all-waves (auto at commit)",
+      "done": "T1,T2,T4,T5,T6,T7,T8,T9,T10,T11",
+      "remaining": "",
+      "at": "2026-11-26T09:08:30.509Z"
     }
   ],
   "build_summary": {
