@@ -198,9 +198,15 @@ func DialectFor(osType string) Dialect {
 	return PosixDialect{}
 }
 
+// Quote is the exported quoting contract (D-30): any command we PRINT in
+// advice/install instructions must survive a human paste. POSIX dialect.
+func Quote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // shellQuote single-quotes for POSIX shells.
 func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return Quote(s)
 }
 
 // psQuote single-quotes for PowerShell (doubles internal quotes).
