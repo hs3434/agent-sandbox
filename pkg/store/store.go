@@ -219,8 +219,9 @@ func (s *Store) GetHandle(id string) (*Handle, error) {
 	return &h, nil
 }
 
-// MarkHandleDead transitions a handle to dead with a reason. Explicit only —
-// container stop kills the whole group and each death lands here (spec §4.2).
+// MarkHandleDead transitions a handle to dead. reason carries the D-21
+// terminal state ("exited(N)" | "signaled(N)" | "exit_unknown") — never a
+// fabricated 0. Explicit only (spec §4.2).
 func (s *Store) MarkHandleDead(id, reason string) error {
 	res, err := s.db.Exec(
 		`UPDATE handles SET state = 'dead', exit_reason = ? WHERE id = ?`, reason, id)
@@ -231,6 +232,29 @@ func (s *Store) MarkHandleDead(id, reason string) error {
 		return fmt.Errorf("handle %q not found", id)
 	}
 	return nil
+}
+
+// ListRunningHandles returns running rows across all envs — the sandboxd
+// restart reconciliation seed (D-06: write-ahead rows are the recovery input).
+func (s *Store) ListRunningHandles() ([]Handle, error) {
+	rows, err := s.db.Query(
+		`SELECT id, env_id, pgid, cmd, state, exit_reason, backend, created_at
+		 FROM handles WHERE state = ? ORDER BY created_at`, HandleRunning)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Handle
+	for rows.Next() {
+		var h Handle
+		var env string
+		if err := rows.Scan(&h.ID, &env, &h.PGID, &h.Cmd, &h.State, &h.ExitReason, &h.ExeEnv, &h.CreatedAt); err != nil {
+			return nil, err
+		}
+		h.EnvID = resource.ResourceID(env)
+		out = append(out, h)
+	}
+	return out, rows.Err()
 }
 
 // ListHandles returns all handles for an env (status reads the ledger here).

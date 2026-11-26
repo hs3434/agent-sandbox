@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/hs3434/agent-sandbox/pkg/audit"
+	"github.com/hs3434/agent-sandbox/pkg/container"
 	"github.com/hs3434/agent-sandbox/pkg/backend"
 	"github.com/hs3434/agent-sandbox/pkg/resource"
 	"github.com/hs3434/agent-sandbox/pkg/store"
@@ -83,7 +84,7 @@ func New(deps Deps) (*Orchestrator, error) {
 		timeout = 60 * time.Second
 	}
 	sessCtx, sessCancel := context.WithCancel(context.Background())
-	return &Orchestrator{
+	o := &Orchestrator{
 		store:         deps.Store,
 		audit:         deps.Audit,
 		backend:       deps.Backend,
@@ -95,7 +96,34 @@ func New(deps Deps) (*Orchestrator, error) {
 		imageLister:   deps.ImageLister,
 		sessCtx:       sessCtx,
 		sessCtxCancel: sessCancel,
-	}, nil
+	}
+	o.reconcileHandles(deps.Backend)
+	return o, nil
+}
+
+// reconcileHandles is the D-06 write-ahead closure: running ledger rows are
+// the recovery seed. Each is probed against the daemon (exec-inspect truth);
+// unknown/dead rows resolve to exit_unknown — honest, never fabricated 0.
+func (o *Orchestrator) reconcileHandles(be lifecycleOps) {
+	rows, err := o.store.ListRunningHandles()
+	if err != nil {
+		return // ledger read failure is not a boot failure
+	}
+	for _, h := range rows {
+		wh, ok := be.(interface {
+			WaitHandle(ctx context.Context, handleID string) (*container.Handle, error)
+		})
+		if !ok {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		got, err := wh.WaitHandle(ctx, h.ID)
+		cancel()
+		if err != nil || got == nil || got.State != container.HandleRunning {
+			_ = o.store.MarkHandleDead(h.ID, "exit_unknown")
+			o.auditEvent(resource.ResourceID(h.EnvID), "process_event", "reconcile: handle dead at boot", h.ID+" exit_unknown")
+		}
+	}
 }
 
 // CreateOpts are the agent-visible create parameters (container_create face).

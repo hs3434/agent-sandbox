@@ -69,7 +69,7 @@ type Backend struct {
 	workHome     string
 	tenant       string
 	network      string
-	onHandleDead func(handleID string, exitCode int)
+	onHandleDead func(handleID string, terminal string)
 }
 
 // Open connects to the local docker daemon.
@@ -400,7 +400,16 @@ func (b *Backend) Exec(ctx context.Context, id resource.ResourceID, cmd string, 
 func (b *Backend) ExecAsync(ctx context.Context, id resource.ResourceID, cmd string) (*Handle, error) {
 	name := b.containerName(id)
 	// 读回容器内 pid：setsid 起独立会话，$! 是 setsid 后台进程的 pid
-	pidCmd := fmt.Sprintf(`setsid /bin/sh -c %s & echo $!`, shellQuote(cmd))
+	// exit-code wrapper (D-05): the wrapper records the terminal state to
+	// /tmp/.sb-exit-$$ (its own pid = the pid we capture below). Shipped via
+	// base64 so cmd's quotes can never break the outer quoting (the heredoc
+	// variant mangled on any cmd containing single quotes — golden-tested).
+	wrap := fmt.Sprintf("#!/bin/sh\n%s\ncode=$?\n"+
+		"if [ $code -gt 128 ]; then echo \"sig:$((code-128))\" > /tmp/.sb-exit-$$; "+
+		"else echo \"$code\" > /tmp/.sb-exit-$$; fi\n", cmd)
+	b64 := base64.StdEncoding.EncodeToString([]byte(wrap))
+	pidCmd := fmt.Sprintf(`setsid /bin/sh -c 'echo %s | base64 -d > /tmp/.sb-wrap.sh && `+
+		`chmod +x /tmp/.sb-wrap.sh && exec /tmp/.sb-wrap.sh' & echo $!`, b64)
 	execCfg := container.ExecOptions{
 		Cmd:          []string{"/bin/sh", "-c", pidCmd},
 		AttachStdout: true,
@@ -428,6 +437,13 @@ func (b *Backend) ExecAsync(ctx context.Context, id resource.ResourceID, cmd str
 	if innerPid <= 1 {
 		return nil, fmt.Errorf("async launch: could not read container pid (got %q)", tail(pidBuf.String(), 100))
 	}
+	// identity anchor (D-05): /proc/<pid>/stat field 22 (starttime) — pid
+	// reuse detection. Split AFTER the last ')' : comm may contain spaces
+	// and parentheses (golden-tested).
+	starttime := b.readStarttime(name, innerPid)
+	exitFile := fmt.Sprintf("/tmp/.sb-exit-%d", innerPid)
+	// reaper: batch-probe pattern (D-06 shape, per-handle for the docker
+	// axis today — the companion supervisor generalizes it in T8).
 	h := &Handle{
 		ID:     attach.ID,
 		EnvID:  id,
@@ -436,30 +452,118 @@ func (b *Backend) ExecAsync(ctx context.Context, id resource.ResourceID, cmd str
 		Cmd:    cmd,
 		State:  HandleRunning,
 	}
-	// reaping: the launch exec already exited — watch the container-namespace
-	// process itself (kill -0). 500ms polling bounds death-notification latency.
 	go func() {
 		poll := time.NewTicker(500 * time.Millisecond)
 		defer poll.Stop()
-		probe := fmt.Sprintf("kill -0 %d 2>/dev/null && echo alive || echo dead", innerPid)
+		probe := fmt.Sprintf("kill -0 %d 2>/dev/null && echo alive || echo dead; cat %s 2>/dev/null || echo __NOEXIT__",
+			innerPid, shellQuote(exitFile))
+		graceTicks := 0
 		for range poll.C {
 			pctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			r, err := b.execSimple(pctx, name, probe)
 			cancel()
-			if err == nil && strings.TrimSpace(r) == "dead" {
-				if b.onHandleDead != nil {
-					b.onHandleDead(h.ID, 0)
+			if err != nil {
+				if isNotFound(err) {
+					// container itself is gone: the process cannot be alive
+					// and the wrapper file died with it — honest unknown (D-21)
+					if b.onHandleDead != nil {
+						b.onHandleDead(h.ID, "exit_unknown")
+					}
+					return
 				}
-				return
+				continue // transient exec failure is not a death fact
 			}
+			alive := strings.Contains(r, "alive")
+			exitOut := "__NOEXIT__"
+			for _, ln := range strings.Split(strings.TrimSpace(r), "\n") {
+				ln = strings.TrimSpace(ln)
+				if ln != "alive" && ln != "dead" && ln != "" {
+					exitOut = ln
+				}
+			}
+			if alive {
+				// pid reuse check: a reused pid has a different starttime
+				if starttime != "" {
+					if now := b.readStarttime(name, innerPid); now != starttime {
+						alive = false // identity drifted: the original is gone
+					}
+				}
+				if alive {
+					graceTicks = 0
+					continue
+				}
+			}
+			// dead (or identity drifted): resolve the terminal state honestly (D-21)
+			term := terminalFromExitOut(exitOut)
+			if term == "" {
+				graceTicks++
+				if graceTicks < 6 { // ~3s grace for a racing wrapper write
+					continue
+				}
+				term = "exit_unknown" // dead ≥ grace with no code — honest fact
+			}
+			if b.onHandleDead != nil {
+				b.onHandleDead(h.ID, term)
+			}
+			return
 		}
 	}()
 	return h, nil
 }
 
+// readStarttime reads /proc/<pid>/stat field 22. Empty string = unresolvable
+// (older kernels/odd namespaces) — the reaper then falls back to kill -0
+// alone rather than lying about identity.
+func (b *Backend) readStarttime(name string, pid int) string {
+	return b.readStarttimeFallback(name, pid)
+}
+
+func (b *Backend) readStarttimeFallback(name string, pid int) string {
+	out, err := b.execSimple(context.Background(), name, fmt.Sprintf("cat /proc/%d/stat 2>/dev/null", pid))
+	if err != nil {
+		return ""
+	}
+	idx := strings.LastIndex(out, ")")
+	if idx < 0 {
+		return ""
+	}
+	fields := strings.Fields(out[idx+1:])
+	// fields[0] is state (field 3); starttime is field 22 → offset 19 here
+	if len(fields) >= 20 {
+		return fields[19]
+	}
+	return ""
+}
+
+func isDigits(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+// terminalFromExitOut maps the wrapper file's content to a D-21 terminal
+// state: "N" → exited(N); "-N"/"sig:N" → signaled; "__NOEXIT__" → "" (grace).
+func terminalFromExitOut(exitOut string) string {
+	exitOut = strings.TrimSpace(exitOut)
+	if exitOut == "" || exitOut == "__NOEXIT__" {
+		return ""
+	}
+	if strings.HasPrefix(exitOut, "sig:") {
+		return "signaled(" + strings.TrimPrefix(exitOut, "sig:") + ")"
+	}
+	if isDigits(exitOut) {
+		return "exited(" + exitOut + ")"
+	}
+	return "exit_unknown"
+}
+
 // SetHandleDeadHook registers the death-notification callback the orchestrator
-// installs (audit event + piggyback delivery); nil = fire-and-forget.
-func (b *Backend) SetHandleDeadHook(fn func(handleID string, exitCode int)) {
+// installs (audit event + piggyback delivery); terminal is the D-21 tri-state
+// ("exited(N)" | "signaled(N)" | "exit_unknown"); nil = fire-and-forget.
+func (b *Backend) SetHandleDeadHook(fn func(handleID string, terminal string)) {
 	b.onHandleDead = fn
 }
 

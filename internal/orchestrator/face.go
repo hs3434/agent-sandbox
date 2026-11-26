@@ -93,7 +93,7 @@ func (o *Orchestrator) ShellExec(ctx context.Context, machine, shellID string, a
 			return nil, fmt.Errorf("ledger write (write-ahead): %w", err)
 		}
 		ef, isC := be.(interface {
-			SetHandleDeadHook(func(handleID string, exitCode int))
+			SetHandleDeadHook(func(handleID string, terminal string))
 		})
 		if isC {
 			ef.SetHandleDeadHook(o.markHandleDead)
@@ -467,14 +467,16 @@ func (o *Orchestrator) auditEvent(id resource.ResourceID, outcome, action, detai
 // markHandleDead is the docker backend's death-notification consumer: ledger
 // row flips to dead (explicit-only transition) + audit event so the death
 // reaches agents via piggyback/status.
-func (o *Orchestrator) markHandleDead(handleID string, exitCode int) {
-	reason := fmt.Sprintf("exited (code %d)", exitCode)
-	if err := o.store.MarkHandleDead(handleID, reason); err != nil {
+func (o *Orchestrator) markHandleDead(handleID string, terminal string) {
+	if terminal == "" {
+		terminal = "exit_unknown" // the one coercion allowed: absent → unknown, never 0 (D-21)
+	}
+	if err := o.store.MarkHandleDead(handleID, terminal); err != nil {
 		// unknown handle = pre-ledger leftover; the fact is still auditable
-		o.auditEvent("", "process_event", "handle dead (unrecorded)", handleID+" "+reason)
+		o.auditEvent("", "process_event", "handle dead (unrecorded)", handleID+" "+terminal)
 		return
 	}
-	o.auditEvent("", "process_event", "handle dead", handleID+" "+reason)
+	o.auditEvent("", "process_event", "handle dead", handleID+" "+terminal)
 }
 
 // searchGlob / listFiles: P0 host-side walk for the docker backend (workdir
