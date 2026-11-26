@@ -8,15 +8,18 @@ package remote
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"log"
 	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/hs3434/agent-sandbox/pkg/companion"
+	"github.com/hs3434/agent-sandbox/pkg/file"
 	"github.com/hs3434/agent-sandbox/pkg/protocol"
 )
 
@@ -105,11 +108,13 @@ func (c *CompanionClient) dialConn(ctx context.Context, conn *companion.Conn) (n
 	if !ok {
 		return nil, nil, fmt.Errorf("machine %q not declared", c.machine)
 	}
-	// NO defer cancel: the context owns the ssh process for the connection's
-	// whole lifetime (CommandContext kills on cancel — cancelling at dial
-	// return would sever the bridge right after handshake). Release happens
-	// in sshPipeConn.Close.
-	dialCtx := ctx
+	// The bridge process must NOT bind to the caller's per-call context:
+	// CommandContext kills the ssh on cancel, and callers cancel when they
+	// return (CompanionState's defer) — that severed every reused conn.
+	// The conn lives for the client's lifetime; release is sshPipeConn.Close
+	// (drop/Close paths). Dial latency still bounded by the handshake ack
+	// budget below, which is the honest 15s gate.
+	dialCtx := context.Background()
 	// unix-socket stdio bridge: ssh runs `nc -U <socket>` and pipes us in
 	wcmd := exec.CommandContext(dialCtx, "ssh", append(c.backend.sshBaseArgs(st),
 		"nc -U "+conn.Socket+" 2>/dev/null")...)
@@ -272,6 +277,7 @@ func (c *CompanionClient) Call(ctx context.Context, method string, params map[st
 
 // drop tears the channel down and records the L2 flip.
 func (c *CompanionClient) drop(why error) {
+	log.Printf("companion %q drop: %v", c.machine, why)
 	c.mu.Lock()
 	conn := c.conn
 	c.conn, c.br = nil, nil
@@ -281,6 +287,54 @@ func (c *CompanionClient) drop(why error) {
 	if conn != nil {
 		_ = conn.Close()
 	}
+}
+
+// ProtoError reports typed (policy) failures from the companion side —
+// binary refusal, cap refusal — which must SURFACE, never fall back to a
+// channel that lacks the semantics (thin would happily return binary text).
+type ProtoError struct{ Code, Message string }
+
+func (e *ProtoError) Error() string { return e.Code + ": " + e.Message }
+
+// IsTransportErr distinguishes channel failures (fall back to thin is
+// correct) from typed policy failures (falling back would bypass D-08/D-07).
+func IsTransportErr(err error) bool {
+	if _, ok := err.(*ProtoError); ok {
+		return false
+	}
+	if _, ok := err.(*protocol.ProtoError); ok {
+		return false // typed envelope = policy, not transport
+	}
+	return true
+}
+
+// FileReadViaProtocol reads a file through the companion (T9 routing):
+// returns decoded text + the durable fact. Typed errors propagate so the
+// caller can fall back to thin explicitly (never silently).
+func (c *CompanionClient) FileReadViaProtocol(ctx context.Context, path string) (string, bool, error) {
+	res, err := c.Call(ctx, "file.read", map[string]any{"path": path})
+	if err != nil {
+		return "", false, err
+	}
+	b64, _ := res["b64"].(string)
+	raw, derr := base64.StdEncoding.DecodeString(b64)
+	if derr != nil {
+		return "", false, fmt.Errorf("file.read: b64 decode: %w", derr)
+	}
+	durable, _ := res["durable"].(bool)
+	return string(file.DecodeText(raw)), durable, nil
+}
+
+// FileWriteViaProtocol writes through the companion (normalized on arrival
+// server-side by pkg/file-equivalent semantics — the wire is bytes).
+func (c *CompanionClient) FileWriteViaProtocol(ctx context.Context, path, content string) (bool, error) {
+	res, err := c.Call(ctx, "file.write", map[string]any{
+		"path": path, "b64": base64.StdEncoding.EncodeToString([]byte(content))})
+	if err != nil {
+		return false, err
+	}
+	durable, _ := res["durable"].(bool)
+	return durable, nil
 }
 
 // Close releases the channel (machine shutdown path).

@@ -257,6 +257,23 @@ func dispatch(msg *protocol.Message) *protocol.Response {
 			break
 		}
 		resp.Result = map[string]any{"handle_id": h, "killed": true}
+	case "file.read":
+		path, _ := msg.Params["path"].(string)
+		b64, durable, err := companion.FileRead(path)
+		if err != nil {
+			resp.Error = &protocol.ProtoError{Code: "file_error", Message: err.Error()}
+			break
+		}
+		resp.Result = map[string]any{"path": path, "b64": b64, "durable": durable}
+	case "file.write":
+		path, _ := msg.Params["path"].(string)
+		content, _ := msg.Params["b64"].(string)
+		durable, err := companion.FileWrite(path, content)
+		if err != nil {
+			resp.Error = &protocol.ProtoError{Code: "file_error", Message: err.Error()}
+			break
+		}
+		resp.Result = map[string]any{"path": path, "durable": durable, "written": true}
 	case "sessions.list":
 		rows := []map[string]any{}
 		for _, p := range sup.List() {

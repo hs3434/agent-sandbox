@@ -67,11 +67,34 @@ func (m remoteMachine) Exec(ctx context.Context, id resource.ResourceID, cmd str
 		Stderr: r.Stderr, ExitReason: r.ExitReason, Duration: r.Duration}, nil
 }
 
+// ReadFile routes companion-first (protocol path — audit says so, T5 truth)
+// with an explicit thin fallback when the channel is down (D-18's heaviest
+// op never falls back silently; here the fallback IS the declared tier).
 func (m remoteMachine) ReadFile(ctx context.Context, id resource.ResourceID, path string) (string, error) {
+	if m.cc != nil && m.CompanionState() == "active" {
+		txt, _, err := m.cc.FileReadViaProtocol(ctx, path)
+		if err == nil {
+			return txt, nil
+		}
+		if !remote.IsTransportErr(err) {
+			// typed policy refusal (binary/cap) — thin would bypass D-08/D-07
+			return "", err
+		}
+		// channel died mid-call: thin fallback is the declared tier
+		if txt2, thinErr := m.be.ReadFile(ctx, m.name, path); thinErr == nil {
+			return txt2, nil
+		}
+		return "", err
+	}
 	return m.be.ReadFile(ctx, m.name, path)
 }
 
 func (m remoteMachine) WriteFile(ctx context.Context, id resource.ResourceID, path, content string) error {
+	if m.cc != nil && m.CompanionState() == "active" {
+		if _, err := m.cc.FileWriteViaProtocol(ctx, path, content); err == nil {
+			return nil
+		}
+	}
 	return m.be.WriteFile(ctx, m.name, path, content)
 }
 
