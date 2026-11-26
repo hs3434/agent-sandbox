@@ -5,36 +5,36 @@
 
 ## Decision Inventory
 
-- [ ] D-01 naming + files via protocol + SFTP bootstrap + thin fallback → T2, T9
-- [ ] D-02 vscode lifecycle mechanics → T5, T6, T10
-- [ ] D-03 docker axis no companion; contract vocabulary → T1, T7
-- [ ] D-04 workdir safe-box reframing → T1, T7
-- [ ] D-05 pid truth (handoff/starttime/wrapper exit) → T6
-- [ ] D-06 supervisor loop + process table + restart reconciliation → T6, T8
-- [ ] D-07 10MB cap → T9
-- [ ] D-08 binary detect + bounded advice → T9
-- [ ] D-09 path freedom both axes → T1, T7
-- [ ] D-10 docker exec channel + fast path + search timeout param → T1
-- [ ] D-11 durable flag + description honesty → T1
-- [ ] D-12 transport (unix socket + direct-tcpip + JSON lines + events) → T4
-- [ ] D-13 trust model semi-auto → T5
-- [ ] D-14 four waves → this plan's wave structure
-- [ ] D-15 reinstall pinning sha256 → T5, T10
-- [ ] D-16 socket token auth → T4
-- [ ] D-17 root guard → T5
-- [ ] D-18 conn.json atomic + degrade chain + owner isolation → T4, T5
-- [ ] D-19 exec idempotency + handle_id in L3 errors → T6
-- [ ] D-20 starttime parser spec + os/arch handshake + platform matrix → T4, T6
-- [ ] D-21 terminal tri-state → T6
-- [ ] D-22 capability probe + container_stopped → T1, T7
-- [ ] D-23 companion boot rescan + live-pid GC guard → T8
-- [ ] D-24 process cap 256 + stress gate → T8
-- [ ] D-25 max_line_bytes framing + conformance test → T4
-- [ ] D-26 injection test harness → T10
-- [ ] D-27 protocol-layer caps + search ceiling + audit trust row + quiet logging → T5, T9
-- [ ] D-28 durable invariant contract gate → T1
-- [ ] D-29 agent-neutral status wording → T10
-- [ ] D-30 bounded advice + quoting fn + contract test → T5
+- [x] D-01 naming + files via protocol + SFTP bootstrap + thin fallback → T2, T9
+- [x] D-02 vscode lifecycle mechanics → T5, T6, T10, T11
+- [x] D-03 docker axis no companion; contract vocabulary → T1, T7
+- [x] D-04 workdir safe-box reframing → T1, T7
+- [x] D-05 pid truth (handoff/starttime/wrapper exit) → T6
+- [x] D-06 supervisor loop + process table + restart reconciliation → T6, T7, T8, T11
+- [x] D-07 10MB cap → T9
+- [x] D-08 binary detect + bounded advice → T9
+- [x] D-09 path freedom both axes → T1, T7
+- [x] D-10 docker exec channel + fast path + search timeout param → T1
+- [x] D-11 durable flag + description honesty → T1
+- [x] D-12 transport (unix socket + direct-tcpip + JSON lines + events) → T4
+- [x] D-13 trust model semi-auto → T5
+- [x] D-14 four waves → this plan's wave structure
+- [x] D-15 reinstall pinning sha256 → T5, T10
+- [x] D-16 socket token auth → T4
+- [x] D-17 root guard → T5
+- [x] D-18 conn.json atomic + degrade chain + owner isolation → T4, T5
+- [x] D-19 exec idempotency + handle_id in L3 errors → T6
+- [x] D-20 starttime parser spec + os/arch handshake + platform matrix → T4, T6
+- [x] D-21 terminal tri-state → T6
+- [x] D-22 capability probe + container_stopped → T1, T7
+- [x] D-23 companion boot rescan + live-pid GC guard → T8
+- [x] D-24 process cap 256 + stress gate → T8
+- [x] D-25 max_line_bytes framing + conformance test → T4
+- [x] D-26 injection test harness → T10
+- [x] D-27 protocol-layer caps + search ceiling + audit trust row + quiet logging → T5, T9
+- [x] D-28 durable invariant contract gate → T1
+- [x] D-29 agent-neutral status wording → T10
+- [x] D-30 bounded advice + quoting fn + contract test → T5
 
 ## Requirement Claims
 
