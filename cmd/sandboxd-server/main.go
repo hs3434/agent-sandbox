@@ -15,10 +15,21 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
+
+	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/hs3434/agent-sandbox/pkg/companion"
 	"github.com/hs3434/agent-sandbox/pkg/protocol"
+)
+
+// serverState is the per-process wiring (supervisor + push channels).
+var (
+	sup     *companion.Supervisor
+	pushMu  sync.Mutex
+	pushers = map[net.Conn]chan map[string]any{} // clients wanting events
 )
 
 func main() {
@@ -82,6 +93,22 @@ func main() {
 		fatal("discovery write: %v", err)
 	}
 
+	// supervisor: disk-backed table + reaper loop (T8); events piggyback
+	// the death callback (no extra goroutine per handle — D-06 shape)
+	tableDir := filepath.Join(companion.Dir(*home), "procs")
+	var errSup error
+	sup, errSup = companion.NewSupervisor(tableDir)
+	if errSup != nil {
+		fatal("supervisor: %v", errSup)
+	}
+	sup.Start()
+	defer sup.Stop()
+	sup.OnDead(func(handleID string, terminal string) {
+		pushEvent(map[string]any{
+			"event": "process.exited", "handle_id": handleID, "terminal": terminal,
+		})
+	})
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
@@ -131,6 +158,24 @@ func serveConn(c net.Conn, token string) {
 		return
 	}
 
+	// events for this connection (opt-in via "events" method)
+	evCh := make(chan map[string]any, 64)
+	pushMu.Lock()
+	pushers[c] = evCh
+	pushMu.Unlock()
+	defer func() {
+		pushMu.Lock()
+		delete(pushers, c)
+		pushMu.Unlock()
+	}()
+	go func() {
+		for ev := range evCh {
+			if protocol.WriteMessage(c, ev) != nil {
+				return
+			}
+		}
+	}()
+
 	for {
 		msg, err := protocol.ReadMessage(br)
 		if err != nil {
@@ -143,6 +188,27 @@ func serveConn(c net.Conn, token string) {
 	}
 }
 
+// pushEvent fans one event out to every connected client (sandboxd only).
+func pushEvent(ev map[string]any) {
+	pushMu.Lock()
+	defer pushMu.Unlock()
+	for _, ch := range pushers {
+		select {
+		case ch <- ev:
+		default: // drop on a slow client — events are advisory, requests are truth
+		}
+	}
+}
+
+// ownerFromHandshake extracts the declaring machine (best effort — request
+// params carry it; the handshake's owner_id is the fallback).
+func ownerFromHandshake(msg *protocol.Message) string {
+	if m, ok := msg.Params["owner_machine"].(string); ok && m != "" {
+		return m
+	}
+	return "default"
+}
+
 // dispatch resolves one request (method surface grows per wave: T8 exec,
 // T9 files). Unknown methods are typed errors, never silence.
 func dispatch(msg *protocol.Message) *protocol.Response {
@@ -150,13 +216,63 @@ func dispatch(msg *protocol.Message) *protocol.Response {
 	switch msg.Method {
 	case "ping":
 		resp.Result = map[string]any{"ok": true, "proto_version": companion.ProtoVersion}
+	case "events":
+		resp.Result = map[string]any{"ok": true, "note": "events will stream on this connection"}
+	case "exec_async":
+		cmd, _ := msg.Params["cmd"].(string)
+		reqID, _ := msg.Params["request_id"].(string)
+		if strings.TrimSpace(cmd) == "" {
+			resp.Error = &protocol.ProtoError{Code: "bad_request", Message: "cmd required"}
+			break
+		}
+		// fork the setsid'd group here (the daemon owns the children);
+		// the supervisor records + reaps
+		pc := exec.Command("/bin/sh", "-c", cmd)
+		pc.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := pc.Start(); err != nil {
+			resp.Error = &protocol.ProtoError{Code: "fork_failed", Message: err.Error()}
+			break
+		}
+		pgid := pc.Process.Pid
+		go func() { _ = pc.Wait() }()
+		h, existed, err := sup.ExecAsync(reqID, cmd, ownerFromHandshake(msg), pgid)
+		if err != nil {
+			resp.Error = &protocol.ProtoError{Code: "cap_refused", Message: err.Error()}
+			break
+		}
+		resp.Result = map[string]any{"handle_id": h, "existed": existed, "pgid": pgid}
+	case "wait":
+		h, _ := msg.Params["handle_id"].(string)
+		p, ok := sup.Wait(h)
+		if !ok {
+			resp.Error = &protocol.ProtoError{Code: "unknown_handle", Message: h}
+			break
+		}
+		resp.Result = map[string]any{"handle_id": h, "state": p.State, "cmd": p.Cmd}
+	case "kill":
+		h, _ := msg.Params["handle_id"].(string)
+		sup.MarkKilledByUs(h)
+		if err := sup.Kill(h); err != nil {
+			resp.Error = &protocol.ProtoError{Code: "kill_failed", Message: err.Error()}
+			break
+		}
+		resp.Result = map[string]any{"handle_id": h, "killed": true}
+	case "sessions.list":
+		rows := []map[string]any{}
+		for _, p := range sup.List() {
+			rows = append(rows, map[string]any{
+				"handle_id": p.HandleID, "state": p.State, "cmd": p.Cmd,
+				"pgid": p.PGID, "owner_machine": p.OwnerMach,
+			})
+		}
+		resp.Result = map[string]any{"sessions": rows}
 	case "shutdown":
 		resp.Result = map[string]any{"ok": true}
 		log.Printf("shutdown requested by client")
 		go func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) }()
 	default:
 		resp.Error = &protocol.ProtoError{
-			Code: "unknown_method",
+			Code:    "unknown_method",
 			Message: fmt.Sprintf("method %q not served (proto %s)", msg.Method, companion.ProtoVersion),
 		}
 	}
