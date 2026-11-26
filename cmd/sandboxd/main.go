@@ -77,7 +77,9 @@ func main() {
 			if err := remoteBe.Connect(t); err != nil {
 				log.Printf("machine %q connect failed (will retry lazily): %v", name, err)
 			}
-			namedBackends[name] = remoteMachine{be: remoteBe, name: name, axis: m.Axis()}
+			rm := remoteMachine{be: remoteBe, name: name, axis: m.Axis()}
+			rm.StartCompanion("default") // D-18 owner id (config surface in T10)
+			namedBackends[name] = &rm // pointer: CompanionState has a pointer receiver
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/hs3434/agent-sandbox/internal/mcpserver"
 	"github.com/hs3434/agent-sandbox/internal/orchestrator"
@@ -21,6 +22,27 @@ type remoteMachine struct {
 	be   *remote.Backend
 	name string
 	axis string // the axis this target lives on (P0: ssh)
+	cc   *remote.CompanionClient // companion channel (nil = never started)
+}
+
+// StartCompanion attaches the companion channel (T6 mode flip entry).
+func (m *remoteMachine) StartCompanion(ownerID string) {
+	m.cc = m.be.NewCompanionClient(m.name, ownerID)
+}
+
+// CompanionState is the mode-flip probe (face.go machineMode): "active"
+// only when a ping round-trip succeeds — never inferred from config.
+func (m *remoteMachine) CompanionState() string {
+	if m.cc == nil {
+		return "absent"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	res, err := m.cc.Call(ctx, "ping", nil)
+	if err != nil || res["ok"] != true {
+		return "down"
+	}
+	return "active"
 }
 
 // Axis names the deployed axis (status groups machines by axis).
