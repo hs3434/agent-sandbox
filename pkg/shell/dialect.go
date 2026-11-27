@@ -42,7 +42,9 @@ func (PosixDialect) Name() string { return "posix" }
 func (PosixDialect) ShellArgs() []string { return []string{"sh"} }
 
 // FrameCommand prints the marker and the exit status after the command:
-//   <cmd>; printf '__SB_END_<marker>__:%s\n' "$?"
+//
+//	<cmd>; printf '__SB_END_<marker>__:%s\n' "$?"
+//
 // The drain loop watches for the marker; the number after ':' is the exit code.
 func (PosixDialect) FrameCommand(cmd, marker string) string {
 	return fmt.Sprintf("%s; printf '__SB_END_%s__:%%s\\n' \"$?\"", cmd, marker)

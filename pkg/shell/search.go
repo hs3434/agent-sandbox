@@ -11,14 +11,14 @@ type ExecFunc func(ctx context.Context, cmd string) (output string, exitCode int
 
 // SearchParams are the file_search inputs (ported from the Python design).
 type SearchParams struct {
-	Pattern    string
-	Path       string
-	SearchType string // "content" (default) | "files"
-	FileGlob   string
-	Limit      int
-	Offset     int
-	OutputMode string // "content" | "files_only" | "count"
-	Context    int
+	Pattern     string
+	Path        string
+	SearchType  string // "content" (default) | "files"
+	FileGlob    string
+	Limit       int
+	Offset      int
+	OutputMode  string // "content" | "files_only" | "count"
+	Context     int
 	TimeoutSecs int // per-command timeout; 0 = engine default (60s), ceiling 300s (D-27)
 }
 
@@ -27,7 +27,7 @@ type SearchResult struct {
 	Matches     []string `json:"matches"`
 	Diagnostics string   `json:"diagnostics,omitempty"`
 	Truncated   bool     `json:"truncated"`
-	Type        string   `json:"type"`  // content | files
+	Type        string   `json:"type"`   // content | files
 	Engine      string   `json:"engine"` // rg | grep — which tool produced it
 }
 
@@ -43,9 +43,9 @@ var (
 // rgNotFoundPatterns are the ways the target shells report a missing rg.
 var rgNotFoundPatterns = []string{
 	"is not recognized", // PowerShell EN
-	"未识别",              // PowerShell ZH
-	"项识别",              // PowerShell ZH (short)
-	"无法将",              // PowerShell ZH
+	"未识别",               // PowerShell ZH
+	"项识别",               // PowerShell ZH (short)
+	"无法将",               // PowerShell ZH
 	"cannot find",       // PowerShell / CMD
 	"command not found", // bash
 	"not found",         // generic

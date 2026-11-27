@@ -124,4 +124,3 @@ func (b *Backend) sftpWrite(ctx context.Context, machine, path string, data []by
 	}
 	return nil
 }
-

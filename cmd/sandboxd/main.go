@@ -13,10 +13,10 @@ import (
 	"github.com/hs3434/agent-sandbox/internal/config"
 	"github.com/hs3434/agent-sandbox/internal/mcpserver"
 	"github.com/hs3434/agent-sandbox/internal/orchestrator"
+	"github.com/hs3434/agent-sandbox/pkg/audit"
 	"github.com/hs3434/agent-sandbox/pkg/container"
 	"github.com/hs3434/agent-sandbox/pkg/remote"
 	"github.com/hs3434/agent-sandbox/pkg/store"
-	"github.com/hs3434/agent-sandbox/pkg/audit"
 )
 
 func main() {
@@ -79,7 +79,7 @@ func main() {
 			}
 			rm := remoteMachine{be: remoteBe, name: name, axis: m.Axis()}
 			rm.StartCompanion("default") // D-18 owner id (config surface in T10)
-			namedBackends[name] = &rm // pointer: CompanionState has a pointer receiver
+			namedBackends[name] = &rm    // pointer: CompanionState has a pointer receiver
 		}
 	}
 

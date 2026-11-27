@@ -3,10 +3,10 @@ package protocol
 import (
 	"bufio"
 	"bytes"
-	"net"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"testing"
 )
 

@@ -213,4 +213,3 @@ func (s *Session) Busy() bool {
 	defer s.mu.Unlock()
 	return s.pending != ""
 }
-

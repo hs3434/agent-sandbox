@@ -11,17 +11,17 @@ package container
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
-	"encoding/base64"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
@@ -158,9 +158,9 @@ func (b *Backend) Create(ctx context.Context, name string, spec resource.ExecEnv
 		// the agent's execs attach around. PID 1 must honour SIGTERM —
 		// `sleep infinity` ignores it, so every stop burned the full grace
 		// window (60s) before SIGKILL.
-		Cmd: []string{"sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"},
+		Cmd:        []string{"sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"},
 		WorkingDir: WorkdirInContainer,
-		Tty:   false,
+		Tty:        false,
 	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{wd + ":" + WorkdirInContainer},
@@ -360,7 +360,7 @@ func (b *Backend) Exec(ctx context.Context, id resource.ResourceID, cmd string, 
 		// is "kill this exec's pid + its children".
 		killCmd := fmt.Sprintf("pkill -TERM -P %d 2>/dev/null; kill -TERM %d 2>/dev/null; sleep 0.2; pkill -KILL -P %d 2>/dev/null; kill -KILL %d 2>/dev/null; true",
 			execPid, execPid, execPid, execPid)
-		killCfg := container.ExecOptions{Cmd:          []string{"/bin/sh", "-c", killCmd},
+		killCfg := container.ExecOptions{Cmd: []string{"/bin/sh", "-c", killCmd},
 			AttachStdout: false, AttachStderr: false, Detach: true}
 		if k, err := b.cli.ContainerExecCreate(ctx, b.containerName(id), killCfg); err == nil {
 			_ = b.cli.ContainerExecStart(ctx, k.ID, container.ExecStartOptions{Detach: true})

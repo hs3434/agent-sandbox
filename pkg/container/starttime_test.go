@@ -9,10 +9,10 @@ import (
 // the last ')' — comm may contain spaces, parens, digits (adversarial names).
 func TestStatParserGolden(t *testing.T) {
 	cases := []struct {
-		name     string
-		line     string
-		want     string
-		note     string
+		name string
+		line string
+		want string
+		note string
 	}{
 		{"simple", "123 (sleep) S 1 123 123 0 -1 4194560 100 0 0 0 10 5 0 0 20 0 1 0 12345 5000 100 18446744073709551615 1 1 1 0 0 0 0 16781312 0 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0", "12345", "comm=sleep"},
 		{"parens in comm", "123 (bad (name)) S 1 123 123 0 -1 4194560 100 0 0 0 10 5 0 0 20 0 1 0 98765 5000 100 0 1 1 1 0 0 0 0 0 0 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0", "98765", "split at LAST )"},

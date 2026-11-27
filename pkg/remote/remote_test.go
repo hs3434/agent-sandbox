@@ -110,7 +110,10 @@ func TestConnectionSelfHealing(t *testing.T) {
 
 func TestEncodingLayerWindows(t *testing.T) {
 	// unit-level: the codepage mapping table (inherited semantics, AD-025)
-	cases := []struct{ cp string; want string }{
+	cases := []struct {
+		cp   string
+		want string
+	}{
 		{"936", "gbk"}, {"65001", "utf-8"}, {"1252", "windows-1252"}, {"", "gbk"},
 	}
 	for _, c := range cases {

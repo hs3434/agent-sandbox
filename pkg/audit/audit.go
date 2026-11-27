@@ -30,16 +30,16 @@ const OutcomeOK Outcome = "ok"
 
 // Event is the canonical audit record.
 type Event struct {
-	ID         string
-	Seq        int64 // storage order (rowid); cursor basis for piggyback/events
-	Timestamp  time.Time
-	Tenant     string
-	Subject    string // operator identity (tenant:task:session)
-	ResourceID resource.ResourceID
-	Action     string
-	Outcome    Outcome
-	DurationMS int64
-	Detail     string // params; secret values are fingerprinted by the sink
+	ID                string
+	Seq               int64 // storage order (rowid); cursor basis for piggyback/events
+	Timestamp         time.Time
+	Tenant            string
+	Subject           string // operator identity (tenant:task:session)
+	ResourceID        resource.ResourceID
+	Action            string
+	Outcome           Outcome
+	DurationMS        int64
+	Detail            string // params; secret values are fingerprinted by the sink
 	SecretFingerprint string // sha256 prefix when Detail carried a secret (NFR-5)
 }
 
@@ -73,5 +73,5 @@ type Query struct {
 	Since      time.Time
 	Until      time.Time
 	Limit      int
-	AfterSeq int64 // rowid cursor: deliver only events after this seq (piggyback dedup)
+	AfterSeq   int64 // rowid cursor: deliver only events after this seq (piggyback dedup)
 }

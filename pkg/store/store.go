@@ -36,14 +36,14 @@ const (
 // Handle is one ledger row: an async process started via shell_exec
 // (async=true). Death transitions are explicit — never silently cleaned.
 type Handle struct {
-	ID          string
-	EnvID       resource.ResourceID
-	PGID        int
-	Cmd         string
-	State       string
-	ExitReason  string
-	ExeEnv      string // backend that owns the process
-	CreatedAt   string // RFC3339; ledger is control-plane data, clock is platform's
+	ID         string
+	EnvID      resource.ResourceID
+	PGID       int
+	Cmd        string
+	State      string
+	ExitReason string
+	ExeEnv     string // backend that owns the process
+	CreatedAt  string // RFC3339; ledger is control-plane data, clock is platform's
 }
 
 // Store wraps the SQLite database for registry + ledger persistence.

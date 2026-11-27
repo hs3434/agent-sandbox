@@ -29,11 +29,11 @@ import (
 // Declared defaults (I6 declaration surface).
 const (
 	DefaultExecTimeout = 60 * time.Second
-	DefaultProbeTO     = 5 * time.Second   // round-trip zombie probe
-	DefaultConnectTO   = 15 * time.Second  // master (re)build
-	ControlPersistSecs = 300               // master keepalive (Python parity)
-	DefaultSessionCap  = 4                 // per-machine concurrent sessions (conhost-leak guard)
-	defaultCodepage    = "936"             // GBK — Chinese Windows fallback (Python parity)
+	DefaultProbeTO     = 5 * time.Second  // round-trip zombie probe
+	DefaultConnectTO   = 15 * time.Second // master (re)build
+	ControlPersistSecs = 300              // master keepalive (Python parity)
+	DefaultSessionCap  = 4                // per-machine concurrent sessions (conhost-leak guard)
+	defaultCodepage    = "936"            // GBK — Chinese Windows fallback (Python parity)
 )
 
 // Declared errors (I2: caller-enumerable).
