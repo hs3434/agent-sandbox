@@ -53,10 +53,10 @@ type Limits struct {
 
 // Config is the whole sandbox.yaml.
 type Config struct {
-	Storage  Storage          `yaml:"storage"`
-	Docker   Docker           `yaml:"docker"`
+	Storage  Storage           `yaml:"storage"`
+	Docker   Docker            `yaml:"docker"`
 	Machines map[string]Target `yaml:"machines"`
-	Limits   Limits           `yaml:"limits,omitempty"`
+	Limits   Limits            `yaml:"limits,omitempty"`
 
 	path string
 }

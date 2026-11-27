@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/hs3434/agent-sandbox/pkg/audit"
-	"github.com/hs3434/agent-sandbox/pkg/container"
 	"github.com/hs3434/agent-sandbox/pkg/backend"
+	"github.com/hs3434/agent-sandbox/pkg/container"
 	"github.com/hs3434/agent-sandbox/pkg/resource"
 	"github.com/hs3434/agent-sandbox/pkg/store"
 )
@@ -41,7 +41,7 @@ type Deps struct {
 	Backends    map[string]any // named machines (ssh) — target selectors, AD-026
 	WorkHome    string
 	Tenant      string
-	ExecTimeout time.Duration         // user-configurable (I6 layer 1)
+	ExecTimeout time.Duration            // user-configurable (I6 layer 1)
 	ImageLister func() ([]string, error) // docker images (container_images tool)
 }
 
@@ -60,8 +60,8 @@ type Orchestrator struct {
 	workHome       string
 	tenant         string
 	locks          *resource.Orchestrator
-	defaultEnvName string              // follow-style default (dwelling ops switch)
-	execTimeout    time.Duration       // I6: config override ?: 60s contract default
+	defaultEnvName string                   // follow-style default (dwelling ops switch)
+	execTimeout    time.Duration            // I6: config override ?: 60s contract default
 	imageLister    func() ([]string, error) // docker image enumeration (nil = unsupported)
 }
 

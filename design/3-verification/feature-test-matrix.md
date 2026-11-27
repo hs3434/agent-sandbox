@@ -89,4 +89,12 @@
 ## 未覆盖
 
 - NFR-8 无饥饿：随配额执行器（P2）
-- P1 遗留：iptables 注入场景（T4 truth：需 root netns，环境无权限——S6 用最强故障 kill -9 等价覆盖断连-恢复链路）；windows companion（矩阵钉 thin，named not silent）
+- P1 遗留：iptables 注入场景（T4 truth：需 root netns，环境无权限——S6 用最强故障 kill -9 等价覆盖断连-恢复链路）
+
+## v3.32 补录（AD-037，task 052d6ccc）
+
+| # | 场景 | 级别 | 验证 | 状态 |
+|---|---|---|---|---|
+| 49 | windows companion 全链路：conn.json（回环自动端口）→ ssh -W 握手 → exec_async echo exited(0) → kill running sleep → killed=true + signaled → 幂等重放 existed=true | U+P | winbuild 192.168.90.253 实测（.gos/archive/2026-11-27-v1.0.0-task-companion-windows-finish-prove/task/052d6ccc/evidence/winbuild-fullround.txt）+ 传输重写后 linux e2e 七探针回归全绿 | ✅ |
+
+原"P1 遗留：windows companion（矩阵钉 thin）"已兑现消除——windows/amd64 进支持矩阵（Job Object + Git Bash sh，D-31/D-32）。
