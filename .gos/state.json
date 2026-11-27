@@ -2,7 +2,7 @@
   "schema_version": 6,
   "repo_id": "a78c63fbf7c766cd",
   "level": 3,
-  "current_stage": "SHIP",
+  "current_stage": "DONE",
   "completed_stages": [
     "THINK",
     "PLAN",
@@ -20,10 +20,11 @@
   },
   "approvals": {
     "THINK": "2026-11-26T03:43:55.274Z",
-    "PLAN": "2026-11-26T05:29:09.315Z"
+    "PLAN": "2026-11-26T05:29:09.315Z",
+    "ARCHIVE": "2026-11-27T06:02:02.346Z"
   },
-  "spec_path": ".gos/task/3f7acd2f/spec.md",
-  "plan_path": ".gos/task/3f7acd2f/plan.md",
+  "spec_path": ".gos/archive/2026-11-27-v1.0.0-task-zh-content-moved-to-companion-/task/3f7acd2f/spec.md",
+  "plan_path": ".gos/archive/2026-11-27-v1.0.0-task-zh-content-moved-to-companion-/task/3f7acd2f/plan.md",
   "project": false,
   "requirements": [
     {
@@ -343,7 +344,7 @@
       "evidence": {
         "command": "[\"bash\",\"/tmp/opencode/t1check.sh\"]",
         "output_excerpt": "conn_mode=600",
-        "artifact_path": ".gos/task/3f7acd2f/evidence/t1-t5probe.log",
+        "artifact_path": ".gos/archive/2026-11-27-v1.0.0-task-zh-content-moved-to-companion-/task/3f7acd2f/evidence/t1-t5probe.log",
         "replay": true
       }
     },
@@ -354,7 +355,7 @@
       "evidence": {
         "command": "[\"bash\",\"-c\",\"cat /tmp/opencode/t2full.log | grep -E \\\"HANDLE|TERMINAL\\\"\"]",
         "output_excerpt": "HANDLE=cp-1795756985080200056",
-        "artifact_path": ".gos/task/3f7acd2f/evidence/t2-async-death.log",
+        "artifact_path": ".gos/archive/2026-11-27-v1.0.0-task-zh-content-moved-to-companion-/task/3f7acd2f/evidence/t2-async-death.log",
         "replay": true
       }
     },
@@ -365,7 +366,7 @@
       "evidence": {
         "command": "[\"bash\",\"-c\",\"grep -E \\\"HANDLE|TORN_EXEC|DISCONNECT_VISIBLE|REATTACH|HANDLE_WAITABLE\\\" /tmp/opencode/t3v5.log\"]",
         "output_excerpt": "DISCONNECT_VISIBLE mode=thin after 5.7s",
-        "artifact_path": ".gos/task/3f7acd2f/evidence/t3-disconnect.log",
+        "artifact_path": ".gos/archive/2026-11-27-v1.0.0-task-zh-content-moved-to-companion-/task/3f7acd2f/evidence/t3-disconnect.log",
         "replay": true
       }
     },
@@ -376,7 +377,7 @@
       "evidence": {
         "command": "[\"bash\",\"-c\",\"grep -E \\\"durable\\\" /tmp/opencode/t4full.log\"]",
         "output_excerpt": "W_WS durable=True",
-        "artifact_path": ".gos/task/3f7acd2f/evidence/t4-durable.log",
+        "artifact_path": ".gos/archive/2026-11-27-v1.0.0-task-zh-content-moved-to-companion-/task/3f7acd2f/evidence/t4-durable.log",
         "replay": true
       }
     },
@@ -387,7 +388,7 @@
       "evidence": {
         "command": "[\"bash\",\"-c\",\"cat /work/run/projects/bio-24/my_projects/agent-sandbox/.gos/task/3f7acd2f/evidence/t5-bootstrap-gates.log\"]",
         "output_excerpt": "PASS: TestClassifyChain (0.00s)",
-        "artifact_path": ".gos/task/3f7acd2f/evidence/t5-bootstrap-gates.log",
+        "artifact_path": ".gos/archive/2026-11-27-v1.0.0-task-zh-content-moved-to-companion-/task/3f7acd2f/evidence/t5-bootstrap-gates.log",
         "replay": true
       }
     }
@@ -565,7 +566,7 @@
       }
     }
   },
-  "changelog_user_summary": "T2: machine mode enum thin/companion/degraded wired into status with agent-neutral wording per D-01/D-29",
+  "changelog_user_summary": "Secure companion channel integrity — single-reader pump routing for disconnect recovery, concurrent-fork cap with terminal-row GC, idempotent-retry fork guard, server-side search deadline, argv option-injection closure",
   "semantic": {
     "allowlist": [
       ".gos/state.json",
@@ -602,78 +603,7 @@
       "pkg/companion/filesvc_test.go"
     ]
   },
-  "checkpoints": [
-    {
-      "stage": "BUILD",
-      "unit": "wave1",
-      "done": "T1,T2",
-      "remaining": "T4,T5,T6,T7,T8,T9,T10,T11",
-      "at": "2026-11-26T05:50:35.133Z"
-    },
-    {
-      "stage": "BUILD",
-      "unit": "unnamed",
-      "done": "",
-      "remaining": "",
-      "at": "2026-11-26T06:43:12.098Z"
-    },
-    {
-      "stage": "BUILD",
-      "unit": "unnamed",
-      "done": "",
-      "remaining": "",
-      "at": "2026-11-26T06:49:49.254Z"
-    },
-    {
-      "stage": "BUILD",
-      "unit": "unnamed",
-      "done": "",
-      "remaining": "",
-      "at": "2026-11-26T07:49:06.176Z"
-    },
-    {
-      "stage": "BUILD",
-      "unit": "unnamed",
-      "done": "",
-      "remaining": "",
-      "at": "2026-11-26T08:00:46.703Z"
-    },
-    {
-      "stage": "BUILD",
-      "unit": "unnamed",
-      "done": "",
-      "remaining": "",
-      "at": "2026-11-26T08:41:01.443Z"
-    },
-    {
-      "stage": "BUILD",
-      "unit": "unnamed",
-      "done": "",
-      "remaining": "",
-      "at": "2026-11-26T08:56:45.679Z"
-    },
-    {
-      "stage": "BUILD",
-      "unit": "unnamed",
-      "done": "",
-      "remaining": "",
-      "at": "2026-11-26T09:02:15.020Z"
-    },
-    {
-      "stage": "BUILD",
-      "unit": "all-waves (auto at commit)",
-      "done": "T1,T2,T4,T5,T6,T7,T8,T9,T10,T11",
-      "remaining": "",
-      "at": "2026-11-26T09:08:30.509Z"
-    },
-    {
-      "stage": "REVIEW",
-      "unit": "unnamed",
-      "done": "",
-      "remaining": "",
-      "at": "2026-11-26T09:24:34.102Z"
-    }
-  ],
+  "checkpoints": [],
   "build_summary": {
     "waves_done": [
       "W1 (T1,T2)",
@@ -720,5 +650,6 @@
       "pkg/store/store.go"
     ],
     "known_issues": []
-  }
+  },
+  "completed_at": "2026-11-27T06:02:07.819Z"
 }

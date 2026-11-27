@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Secure companion channel integrity — single-reader pump routing for disconnect recovery, concurrent-fork cap with terminal-row GC, idempotent-retry fork guard, server-side search deadline, argv option-injection closure (D-24/D-19/D-27/D-21) [2026-11-27]
 - Secure companion channel integrity — process-table cap counts concurrent forks with terminal-row GC, idempotent retries never double-fork, file search bounded by a server-side deadline, rg/grep argv option-injection closed, and disconnect recovery routed through a single pump reader so reattach converges (D-24/D-19/D-27/D-21) [2026-11-27]
 
 - Add companion exit wrapper so natural death records its own code via a per-handle exit file, an idle-retirement TTL gate that running handles veto, target-local file patch and search inside the daemon, a systemd user unit, and disconnect-injection coverage with sub-budget recovery (D-05/D-27) [2026-11-26]
