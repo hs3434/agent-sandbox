@@ -12,11 +12,11 @@ func TestWriteConnAtomicAndModes(t *testing.T) {
 	if err := WriteConn(home, c); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	st := ReadConn(home)
+	st := ReadConn(home, "default")
 	if st.State != "ok" || st.Conn == nil || st.Conn.Token != "tok" {
 		t.Fatalf("read state = %+v", st)
 	}
-	fi, err := os.Stat(connPath(home))
+	fi, err := os.Stat(ConnPath(home, "default"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,27 +34,39 @@ func TestWriteConnAtomicAndModes(t *testing.T) {
 			t.Errorf("tmp file left behind: %s", e.Name())
 		}
 	}
+	// owner isolation: a second owner gets its own conn file
+	c2 := &Conn{Token: "tok2", Socket: SocketPath(home, "bob"), ProtoVersion: ProtoVersion, OwnerID: "bob", Pid: 43}
+	if err := WriteConn(home, c2); err != nil {
+		t.Fatalf("write bob: %v", err)
+	}
+	if _, err := os.Stat(ConnPath(home, "bob")); err != nil {
+		t.Fatalf("bob conn missing: %v", err)
+	}
+	stA := ReadConn(home, "default")
+	if stA.Conn == nil || stA.Conn.OwnerID != "default" {
+		t.Fatalf("alice row clobbered: %+v", stA)
+	}
 }
 
 func TestReadConnLenient(t *testing.T) {
 	home := t.TempDir()
-	if st := ReadConn(home); st.State != "missing" {
+	if st := ReadConn(home, "default"); st.State != "missing" {
 		t.Errorf("missing = %s", st.State)
 	}
 	if err := os.MkdirAll(Dir(home), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(connPath(home), []byte("{corrupt"), 0o600); err != nil {
+	if err := os.WriteFile(ConnPath(home, "default"), []byte("{corrupt"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if st := ReadConn(home); st.State != "corrupt" {
+	if st := ReadConn(home, "default"); st.State != "corrupt" {
 		t.Errorf("corrupt = %s", st.State)
 	}
 	// valid json but empty token is corrupt too (fail-closed contract)
-	if err := os.WriteFile(connPath(home), []byte(`{"socket":"/x"}`), 0o600); err != nil {
+	if err := os.WriteFile(ConnPath(home, "default"), []byte(`{"socket":"/x"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if st := ReadConn(home); st.State != "corrupt" {
+	if st := ReadConn(home, "default"); st.State != "corrupt" {
 		t.Errorf("empty-token = %s, want corrupt", st.State)
 	}
 }

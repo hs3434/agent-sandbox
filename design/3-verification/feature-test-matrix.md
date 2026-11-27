@@ -82,8 +82,11 @@
 | 43 | 文件协议化（companion-first 路由 + binary 拒绝 + 10MB cap 拒 + typed 错误不下沉 thin） | P | e2e/t9_probe.py（5 检查） | ✅ |
 | 44 | L5 reattach（async handle 存活 kill-9+重启+sandboxd 重启，账本诚实 exit_unknown） | P | e2e/t11_reattach.py（6 步） | ✅ |
 | 45 | red-team gate（S1 kill 翻转 / S2 root guard / S3 pin 关闭 / S4 协议幂等 / S5 措辞无安装提示） | P | e2e/t10_gate.sh（5 场景 exit code 门禁） | ✅ |
+| 46 | companion exit wrapper（自然死亡=exited(7) 真值；无 wrapper 文件才 exit_unknown） | U+P | supervisor_test.TestExitFileWrapper + daemon 裸协议探针 | ✅ |
+| 47 | TTL 门（零连接+空进程表→自退并清 discovery；运行中 handle 否决） | U+P | supervisor_test.TestTTL*（2 测）+ --ttl 3 e2e（veto/retire 双相） | ✅ |
+| 48 | file.patch/file.search 协议化 + S6 断连注入（杀 daemon→0.5s 恢复<5s 单元预算，handle 跨重启可寻址） | U+P | filesvc_test（2 测）+ daemon 探针 + e2e/s6_disconnect.py | ✅ |
 
 ## 未覆盖
 
 - NFR-8 无饥饿：随配额执行器（P2）
-- P1 遗留：companion exit wrapper（自然死亡现在是 exit_unknown，wrapper 后可 exited(0)——W4 细化）；iptables 注入场景（T4 truth：需 root netns，环境无权限，代码路径由 L2 状态机 + drop 诊断单测覆盖）；windows companion（矩阵钉 thin，named not silent）
+- P1 遗留：iptables 注入场景（T4 truth：需 root netns，环境无权限——S6 用最强故障 kill -9 等价覆盖断连-恢复链路）；windows companion（矩阵钉 thin，named not silent）

@@ -49,8 +49,22 @@ func SocketPath(home, ownerID string) string {
 	return filepath.Join(Dir(home), "sandboxd-"+ownerID+".sock")
 }
 
-// connPath is the discovery file itself.
-func connPath(home string) string { return filepath.Join(Dir(home), "conn.json") }
+// ConnPath is the discovery file itself — owner-namespaced like the socket
+// (D-18): two owners on one home get independent daemon records; sharing the
+// file would be last-writer-wins, the corruption mode this card rejects.
+// ConnFileName is the owner-namespaced discovery file's basename — the ssh
+// bootstrap path is `cat ~/.sandboxd-server/<ConnFileName>` (tilde-expansion
+// is the transport's job; DirName is part of the tilde literal there).
+func ConnFileName(ownerID string) string {
+	return filepath.Base(ConnPath("/x", ownerID))
+}
+
+func ConnPath(home, ownerID string) string {
+	if strings.TrimSpace(ownerID) == "" {
+		ownerID = "default"
+	}
+	return filepath.Join(Dir(home), "conn-"+ownerID+".json")
+}
 
 // NewToken generates the socket admission secret (128-bit, hex).
 func NewToken() (string, error) {
@@ -80,10 +94,14 @@ func WriteConn(home string, c *Conn) error {
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("conn tmp write: %w", err)
 	}
-	if err := os.Rename(tmp, connPath(home)); err != nil {
+	if f, err := os.Open(tmp); err == nil {
+		_ = f.Sync() // rename-after-fsync: no torn file on crash (D-18)
+		_ = f.Close()
+	}
+	if err := os.Rename(tmp, ConnPath(home, c.OwnerID)); err != nil {
 		return fmt.Errorf("conn rename: %w", err)
 	}
-	return os.Chmod(connPath(home), 0o600)
+	return os.Chmod(ConnPath(home, c.OwnerID), 0o600)
 }
 
 // ReadConnState is the lenient discovery read (D-18 degrade chain input):
@@ -96,8 +114,8 @@ type ReadConnState struct {
 
 // ReadConn reads the discovery file leniently — corrupt never triggers an
 // install; it only reports (the heaviest operation is never the fallback).
-func ReadConn(home string) ReadConnState {
-	data, err := os.ReadFile(connPath(home))
+func ReadConn(home, ownerID string) ReadConnState {
+	data, err := os.ReadFile(ConnPath(home, ownerID))
 	if os.IsNotExist(err) {
 		return ReadConnState{State: "missing"}
 	}

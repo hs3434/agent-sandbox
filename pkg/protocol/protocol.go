@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 )
 
 // ProtoVersion rides the handshake (D-02): mismatch (successfully parsed) is
@@ -81,8 +80,6 @@ type Message struct {
 	Params map[string]any
 	Raw    []byte // the original line (for typed re-decode)
 }
-
-var handshakeOnce sync.Once // guards nothing critical; symmetry with codec
 
 // WriteHandshake emits the handshake as the first line.
 func WriteHandshake(w io.Writer, h *Handshake) error {

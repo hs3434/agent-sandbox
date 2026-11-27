@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hs3434/agent-sandbox/internal/mcpserver"
@@ -19,10 +20,16 @@ import (
 // remoteMachine adapts one named ssh machine to the exec/file faces the
 // orchestrator routes to (machine selector semantics, AD-026).
 type remoteMachine struct {
-	be   *remote.Backend
-	name string
-	axis string // the axis this target lives on (P0: ssh)
-	cc   *remote.CompanionClient // companion channel (nil = never started)
+	be          *remote.Backend
+	name        string
+	axis        string                  // the axis this target lives on (P0: ssh)
+	cc          *remote.CompanionClient // companion channel (nil = never started)
+	stateMu     sync.Mutex
+	cachedState string
+	stateAt     time.Time
+	seqMu       sync.Mutex
+	seq         int64
+	deadHook    func(handleID string, terminal string)
 }
 
 // StartCompanion attaches the companion channel (T6 mode flip entry).
@@ -32,17 +39,31 @@ func (m *remoteMachine) StartCompanion(ownerID string) {
 
 // CompanionState is the mode-flip probe (face.go machineMode): "active"
 // only when a ping round-trip succeeds — never inferred from config.
+// Cached 5s: file ops would otherwise pay a full ping round-trip each; a
+// dead channel surfaces through the op's own transport error anyway.
 func (m *remoteMachine) CompanionState() string {
 	if m.cc == nil {
 		return "absent"
 	}
+	m.stateMu.Lock()
+	if time.Since(m.stateAt) < 5*time.Second && m.cachedState != "" {
+		st := m.cachedState
+		m.stateMu.Unlock()
+		return st
+	}
+	m.stateMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	res, err := m.cc.Call(ctx, "ping", nil)
-	if err != nil || res["ok"] != true {
-		return "down"
+	st := "down"
+	if err == nil && res["ok"] == true {
+		st = "active"
 	}
-	return "active"
+	m.stateMu.Lock()
+	m.cachedState = st
+	m.stateAt = time.Now()
+	m.stateMu.Unlock()
+	return st
 }
 
 // Axis names the deployed axis (status groups machines by axis).
@@ -51,6 +72,38 @@ func (m remoteMachine) Axis() string {
 		return "ssh"
 	}
 	return m.axis
+}
+
+// SetHandleDeadHook wires the daemon's death events to the platform ledger
+// (the docker twin is Backend.SetHandleDeadHook; here events ride the
+// protocol push channel → supervisor.OnDead → this hook).
+func (m *remoteMachine) SetHandleDeadHook(fn func(handleID string, terminal string)) {
+	m.deadHook = fn
+	if m.cc != nil {
+		m.cc.OnDead(m.DispatchDead) // daemon pushes → ledger flip (companion twin of docker hook)
+	}
+}
+
+// DispatchDead is invoked by the server's events handler for each terminal
+// row the daemon pushes (state exited(N)/signaled(N)/exit_unknown).
+func (m *remoteMachine) DispatchDead(handleID, terminal string) {
+	if m.deadHook != nil {
+		m.deadHook(handleID, terminal)
+	}
+}
+
+// nextIntent hands out the per-machine intent sequence (D-19 scoping).
+// Process-lifetime monotonic + time-seeded: a restarted sandboxd can never
+// re-emit an id the daemon still remembers (cross-boot collision = adopted
+// corpse handle).
+func (m *remoteMachine) nextIntent() int64 {
+	m.seqMu.Lock()
+	defer m.seqMu.Unlock()
+	if m.seq == 0 {
+		m.seq = time.Now().UnixNano()
+	}
+	m.seq++
+	return m.seq
 }
 
 // ExecAsync supervises through the companion when active (T11): the handle
@@ -63,7 +116,12 @@ func (m remoteMachine) ExecAsync(ctx context.Context, id resource.ResourceID, cm
 	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	res, err := m.cc.Call(ctx2, "exec_async", map[string]any{
-		"cmd": cmd, "request_id": fmt.Sprintf("%s-%d", m.name, time.Now().UnixNano()),
+		"cmd": cmd,
+		// m6 idempotency WITHOUT the collision trap: stable within THIS
+		// intent (transport retry dedups, D-19), fresh across intents AND
+		// boots (boot-scoped seq would re-collide: every restart re-emits
+		// :1 and adopts the previous boot's terminal row — a corpse handle).
+		"request_id":    fmt.Sprintf("%s:%s:%d", m.name, cmd, m.nextIntent()),
 		"owner_machine": m.name,
 	})
 	if err != nil {
@@ -183,6 +241,9 @@ func (m remoteMachine) WriteFile(ctx context.Context, id resource.ResourceID, pa
 	if m.cc != nil && m.CompanionState() == "active" {
 		if _, err := m.cc.FileWriteViaProtocol(ctx, path, content); err == nil {
 			return nil
+		} else if !remote.IsTransportErr(err) {
+			// typed cap/policy refusal — thin SFTP would bypass D-07's cap
+			return err
 		}
 	}
 	return m.be.WriteFile(ctx, m.name, path, content)

@@ -8,6 +8,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -16,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"os/exec"
 	"strings"
@@ -36,6 +38,7 @@ func main() {
 	home := flag.String("home", "", "target user home (default: $HOME)")
 	owner := flag.String("owner_id", "default", "owner id — isolates daemons per platform owner (D-18)")
 	allowRoot := flag.Bool("allow_root", false, "permit running as uid0 (D-17: humans only)")
+	ttlSecs := flag.Int("ttl", 0, "idle-exit seconds: retire when no connections AND no running handles (0 = never)")
 	flag.Parse()
 
 	log.SetFlags(log.Ltime)
@@ -103,6 +106,17 @@ func main() {
 	}
 	sup.Start()
 	defer sup.Stop()
+	// TTL gate (F8): no connections + empty process table past --ttl →
+	// graceful self-retirement (vscode-server lifecycle symmetry, D-02).
+	// A running handle vetoes; zero-conf machines don't hold a daemon forever.
+	if *ttlSecs > 0 {
+		sup.SetTTL(time.Duration(*ttlSecs)*time.Second, func(why string) {
+			log.Printf("ttl: retiring daemon (%s)", why)
+			_ = os.Remove(companion.ConnPath(*home, *owner))
+			_ = os.Remove(socket)
+			os.Exit(0)
+		})
+	}
 	sup.OnDead(func(handleID string, terminal string) {
 		pushEvent(map[string]any{
 			"event": "process.exited", "handle_id": handleID, "terminal": terminal,
@@ -117,7 +131,7 @@ func main() {
 		log.Printf("shutdown: closing socket + discovery cleanup")
 		ln.Close()
 		_ = os.Remove(socket)
-		_ = os.Remove(filepath.Join(companion.Dir(*home), "conn.json"))
+		_ = os.Remove(companion.ConnPath(*home, *owner))
 		os.Exit(0)
 	}()
 
@@ -126,8 +140,13 @@ func main() {
 	for {
 		c, err := ln.Accept()
 		if err != nil {
-			return // listener closed by shutdown path
+			if errors.Is(err, net.ErrClosed) {
+				return // listener closed by shutdown path
+			}
+			log.Printf("accept: %v (continuing)", err)
+			continue
 		}
+		sup.NoteConn()
 		go serveConn(c, token)
 	}
 }
@@ -158,6 +177,20 @@ func serveConn(c net.Conn, token string) {
 		return
 	}
 
+	// per-conn SINGLE writer: responses and event pushes serialize through
+	// one queue — concurrent WriteMessage on one net.Conn interleaves lines
+	// and desyncs the client's reader (the id-mismatch drop we chased).
+	outCh := make(chan any, 128)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for v := range outCh {
+			if protocol.WriteMessage(c, v) != nil {
+				return
+			}
+		}
+	}()
+
 	// events for this connection (opt-in via "events" method)
 	evCh := make(chan map[string]any, 64)
 	pushMu.Lock()
@@ -167,10 +200,13 @@ func serveConn(c net.Conn, token string) {
 		pushMu.Lock()
 		delete(pushers, c)
 		pushMu.Unlock()
+		close(evCh) // M3: release the writer goroutine (one leak per conn otherwise)
 	}()
 	go func() {
 		for ev := range evCh {
-			if protocol.WriteMessage(c, ev) != nil {
+			select {
+			case outCh <- ev:
+			case <-done:
 				return
 			}
 		}
@@ -181,10 +217,31 @@ func serveConn(c net.Conn, token string) {
 		if err != nil {
 			return
 		}
+		sup.NoteConn()
 		resp := dispatch(msg)
-		if err := protocol.WriteMessage(c, resp); err != nil {
+		if _, ok := pushedMethods[msg.Method]; !ok {
+			if err := writeOnly(outCh, done, resp); err != nil {
+				return
+			}
+			continue
+		}
+		// streaming methods (events): the response acks, pushes flow after
+		if err := writeOnly(outCh, done, resp); err != nil {
 			return
 		}
+	}
+}
+
+// pushedMethods opt a connection into the event fan-out (payloads arrive
+// WITHOUT an id — clients must expect interleaved-by-queue lines).
+var pushedMethods = map[string]bool{"events": true}
+
+func writeOnly(outCh chan any, done chan struct{}, v any) error {
+	select {
+	case outCh <- v:
+		return nil
+	case <-done:
+		return fmt.Errorf("conn closing")
 	}
 }
 
@@ -198,6 +255,11 @@ func pushEvent(ev map[string]any) {
 		default: // drop on a slow client — events are advisory, requests are truth
 		}
 	}
+}
+
+// shQuote POSIX single-quote for wrapper paths (D-30 quoting contract).
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // ownerFromHandshake extracts the declaring machine (best effort — request
@@ -225,21 +287,40 @@ func dispatch(msg *protocol.Message) *protocol.Response {
 			resp.Error = &protocol.ProtoError{Code: "bad_request", Message: "cmd required"}
 			break
 		}
-		// fork the setsid'd group here (the daemon owns the children);
-		// the supervisor records + reaps
-		pc := exec.Command("/bin/sh", "-c", cmd)
-		pc.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := pc.Start(); err != nil {
-			resp.Error = &protocol.ProtoError{Code: "fork_failed", Message: err.Error()}
-			break
-		}
-		pgid := pc.Process.Pid
-		go func() { _ = pc.Wait() }()
-		h, existed, err := sup.ExecAsync(reqID, cmd, ownerFromHandshake(msg), pgid)
+		// reserve the row FIRST (cap + idempotency gates see the allocation);
+		// a retry (existed=true) never forks twice — same handle, same pgid
+		h, existed, err := sup.ExecAsync(reqID, cmd, ownerFromHandshake(msg), 0)
 		if err != nil {
 			resp.Error = &protocol.ProtoError{Code: "cap_refused", Message: err.Error()}
 			break
 		}
+		if existed {
+			if p, ok := sup.Wait(h); ok {
+				resp.Result = map[string]any{"handle_id": h, "existed": true, "pgid": p.PGID}
+			} else {
+				resp.Result = map[string]any{"handle_id": h, "existed": true, "pgid": 0}
+			}
+			break
+		}
+		// fork the setsid'd group here (the daemon owns the children);
+		// the supervisor records + reaps. Exit-code wrapper (D-05, docker
+		// twin): the group leader's shell records its own terminal state to
+		// a per-handle file — the reaper reads truth the child wrote, so a
+		// natural death is exited(N), not exit_unknown.
+		exitPath := sup.ExitFilePath(h)
+		wrapped := fmt.Sprintf(`%s
+__sb_code=$?
+if [ $__sb_code -gt 128 ]; then echo "sig:$((__sb_code-128))" > %s; else echo "$__sb_code" > %s; fi`, cmd, shQuote(exitPath), shQuote(exitPath))
+		pc := exec.Command("/bin/sh", "-c", wrapped)
+		pc.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := pc.Start(); err != nil {
+			sup.Remove(h) // row without a process is a lie — roll back
+			resp.Error = &protocol.ProtoError{Code: "fork_failed", Message: err.Error()}
+			break
+		}
+		pgid := pc.Process.Pid
+		sup.SetPGID(h, pgid)
+		go func() { _ = pc.Wait() }()
 		resp.Result = map[string]any{"handle_id": h, "existed": existed, "pgid": pgid}
 	case "wait":
 		h, _ := msg.Params["handle_id"].(string)
@@ -261,11 +342,11 @@ func dispatch(msg *protocol.Message) *protocol.Response {
 			resp.Result = map[string]any{"pgid": int(pgidF), "killed": true}
 			break
 		}
-		sup.MarkKilledByUs(h)
 		if err := sup.Kill(h); err != nil {
 			resp.Error = &protocol.ProtoError{Code: "kill_failed", Message: err.Error()}
 			break
 		}
+		sup.MarkKilledByUs(h) // after success: a natural death racing the kill stays honest
 		resp.Result = map[string]any{"handle_id": h, "killed": true}
 	case "file.read":
 		path, _ := msg.Params["path"].(string)
@@ -274,6 +355,7 @@ func dispatch(msg *protocol.Message) *protocol.Response {
 			resp.Error = &protocol.ProtoError{Code: "file_error", Message: err.Error()}
 			break
 		}
+		log.Printf("file.read %s durable=%t", path, durable) // trust row (D-27): ops visible, content never logged
 		resp.Result = map[string]any{"path": path, "b64": b64, "durable": durable}
 	case "file.write":
 		path, _ := msg.Params["path"].(string)
@@ -283,7 +365,31 @@ func dispatch(msg *protocol.Message) *protocol.Response {
 			resp.Error = &protocol.ProtoError{Code: "file_error", Message: err.Error()}
 			break
 		}
+		log.Printf("file.write %s durable=%t", path, durable)
 		resp.Result = map[string]any{"path": path, "durable": durable, "written": true}
+	case "file.patch":
+		path, _ := msg.Params["path"].(string)
+		oldS, _ := msg.Params["old"].(string)
+		newS, _ := msg.Params["new"].(string)
+		all, _ := msg.Params["all"].(bool)
+		n, err := companion.FilePatch(path, oldS, newS, all)
+		if err != nil {
+			resp.Error = &protocol.ProtoError{Code: "file_error", Message: err.Error()}
+			break
+		}
+		log.Printf("file.patch %s n=%d", path, n)
+		resp.Result = map[string]any{"path": path, "replacements": n, "durable": true}
+	case "file.search":
+		root, _ := msg.Params["root"].(string)
+		pattern, _ := msg.Params["pattern"].(string)
+		fileGlob, _ := msg.Params["glob"].(string)
+		limitF, _ := msg.Params["limit"].(float64)
+		out, diag, err := companion.FileSearch(root, pattern, fileGlob, int(limitF))
+		if err != nil && out == "" {
+			resp.Error = &protocol.ProtoError{Code: "search_error", Message: err.Error()}
+			break
+		}
+		resp.Result = map[string]any{"matches": out, "diagnostics": diag, "engine": "target-local"}
 	case "sessions.list":
 		rows := []map[string]any{}
 		for _, p := range sup.List() {

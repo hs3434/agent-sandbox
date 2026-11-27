@@ -1,3 +1,7 @@
 {"ts":"2026-11-26T03:44:30.292Z","path":".gos/task/3f7acd2f/spec.md","head":"3f7acd2fab7295a75e128786fb55e252922a723e","adopted":true}
 {"ts":"2026-11-26T03:44:30.547Z","path":".gos/state.json","head":"3f7acd2fab7295a75e128786fb55e252922a723e","adopted":true}
 {"ts":"2026-11-26T03:44:30.791Z","path":".gos/README.md","head":"3f7acd2fab7295a75e128786fb55e252922a723e","adopted":true}
+{"ts":"2026-11-27T06:00:21.619Z","path":".gos/codebase/edge-baseline.json","head":"20e807960d1c5d3bcefcbadd866990609dbdcd84","adopted":true}
+{"ts":"2026-11-27T06:00:21.871Z","path":".gos/codebase/network.md","head":"20e807960d1c5d3bcefcbadd866990609dbdcd84","adopted":true}
+{"ts":"2026-11-27T06:00:22.123Z","path":".gos/task/3f7acd2f/.task-head","head":"20e807960d1c5d3bcefcbadd866990609dbdcd84","adopted":true}
+{"ts":"2026-11-27T06:00:22.364Z","path":".gos/task/3f7acd2f/plan.md","head":"20e807960d1c5d3bcefcbadd866990609dbdcd84","adopted":true}

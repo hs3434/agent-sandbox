@@ -1,0 +1,4 @@
+W_WS durable=True
+R_WS durable=True content=in-bind
+W_ETC durable=False
+R_ETC durable=False content=t4-nonws

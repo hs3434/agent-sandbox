@@ -2,11 +2,11 @@ package companion
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,9 +22,15 @@ const (
 	ProcUnknown  = "exit_unknown"
 )
 
-// ProcTableCap is the D-24 hard cap: the 257th concurrent async gets a typed
-// refusal — fd exhaustion must be impossible by construction.
+// ProcTableCap is the D-24 hard cap: the 257th CONCURRENT async gets a typed
+// refusal — fd exhaustion must be impossible by construction. Terminal rows
+// don't count; they GC after RetentionWindow.
 const ProcTableCap = 256
+
+// RetentionWindow is how long terminal rows stay queryable (wait/read) before
+// the GC deletes map entry + disk file. Long enough for any realistic poll,
+// short enough that a long-lived daemon stays bounded.
+const RetentionWindow = 10 * time.Minute
 
 // Proc is one supervised process row (disk-backed format, D-23: the table
 // survives companion restarts — every field round-trips through JSON).
@@ -50,13 +56,19 @@ type Terminal struct {
 // table, batch probes. All state transitions go through the mutex — the
 // loop, RPC handlers, and boot rescan are the only writers.
 type Supervisor struct {
-	mu        sync.Mutex
-	procs     map[string]*Proc // handle_id → row
-	killMarks map[string]bool  // Kill intent markers (memory-only, D-21 honesty)
-	dir       string           // disk-backed table dir (D-23)
-	dead      []func(handleID string, terminal string)
-	once      sync.Once
-	stop      chan struct{}
+	mu          sync.Mutex
+	procs       map[string]*Proc // handle_id → row
+	killMarks   map[string]bool  // Kill intent markers (memory-only, D-21 honesty)
+	dir         string           // disk-backed table dir (D-23)
+	dead        []func(handleID string, terminal string)
+	once        sync.Once
+	stop        chan struct{}
+	stopOnce    sync.Once
+	loopDone    chan struct{}
+	exitFileFor func(handleID string) string // wrapper exit file path (nil = no wrapper)
+	ttl         time.Duration
+	ttlFire     func(why string)
+	lastConnAt  time.Time
 }
 
 // NewSupervisor opens (or re-scans) the disk-backed table under dir.
@@ -67,7 +79,10 @@ func NewSupervisor(dir string) (*Supervisor, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	s := &Supervisor{procs: map[string]*Proc{}, killMarks: map[string]bool{}, dir: dir, stop: make(chan struct{})}
+	sLoopDone := make(chan struct{})
+	close(sLoopDone) // "not started" state: Stop() join returns immediately
+	s := &Supervisor{procs: map[string]*Proc{}, killMarks: map[string]bool{}, dir: dir, stop: make(chan struct{}), loopDone: sLoopDone}
+	s.exitFileFor = s.ExitFilePath
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".json") {
@@ -99,11 +114,90 @@ func NewSupervisor(dir string) (*Supervisor, error) {
 	return s, nil
 }
 
+// SetTTL arms the idle-exit gate (F8): the daemon may retire itself only
+// when BOTH conditions hold — no sandboxd connection alive AND an empty
+// process table. A running handle vetoes exit (TTL never orphans work).
+func (s *Supervisor) SetTTL(d time.Duration, onExpire func(why string)) {
+	s.mu.Lock()
+	s.ttl = d
+	s.ttlFire = onExpire
+	if s.lastConnAt.IsZero() {
+		s.lastConnAt = time.Now() // born idle: the window starts at arm time
+	}
+	s.mu.Unlock()
+}
+
+// NoteConn marks connection liveness (server calls on accept/serve; the
+// gate reads the timestamp — liveness is a heartbeat, not a counter race).
+func (s *Supervisor) NoteConn() {
+	s.mu.Lock()
+	s.lastConnAt = time.Now()
+	s.mu.Unlock()
+}
+
+// gcTerminal deletes terminal rows older than the retention window (bounded
+// memory + disk for a long-lived daemon; D-24's other half).
+func (s *Supervisor) gcTerminal() {
+	cutoff := time.Now().Add(-RetentionWindow)
+	s.mu.Lock()
+	var doomed []string
+	for id, p := range s.procs {
+		if p.State == ProcRunning {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339Nano, p.ExitedAt); err == nil && t.Before(cutoff) {
+			doomed = append(doomed, id)
+		}
+	}
+	for _, id := range doomed {
+		delete(s.procs, id)
+		delete(s.killMarks, id) // m4: prune kill intent with the row
+	}
+	s.mu.Unlock()
+	for _, id := range doomed {
+		_ = os.Remove(filepath.Join(s.dir, id+".json"))
+		_ = os.Remove(filepath.Join(s.dir, "exit-"+id)) // wrapper file too
+	}
+}
+
+// ttlCheckTick is the reaper-loop entry (exported state guarded here).
+func (s *Supervisor) ttlCheckTick() { s.ttlCheck() }
+
+// ttlCheck runs each reaper tick: expired idle + empty table → fire once.
+func (s *Supervisor) ttlCheck() {
+	s.mu.Lock()
+	fire := s.ttl > 0 && s.ttlFire != nil &&
+		time.Since(s.lastConnAt) > s.ttl &&
+		len(s.runningProcsLocked()) == 0
+	s.mu.Unlock()
+	if fire {
+		s.mu.Lock()
+		fn := s.ttlFire
+		s.ttlFire = nil // once
+		s.mu.Unlock()
+		if fn != nil {
+			fn("idle")
+		}
+	}
+}
+
+func (s *Supervisor) runningProcsLocked() []string {
+	var out []string
+	for _, p := range s.procs {
+		if p.State == ProcRunning {
+			out = append(out, p.HandleID)
+		}
+	}
+	return out
+}
+
 // Start runs the reaper loop (one goroutine for the whole table — D-06's
 // whole point: O(1) traffic vs per-handle observers).
 func (s *Supervisor) Start() {
 	s.once.Do(func() {
+		s.loopDone = make(chan struct{}) // un-close the constructor's stub: Stop now JOINS
 		go func() {
+			defer close(s.loopDone) // Stop() joins on this — no post-stop writes
 			tick := time.NewTicker(500 * time.Millisecond)
 			defer tick.Stop()
 			for {
@@ -112,6 +206,8 @@ func (s *Supervisor) Start() {
 					return
 				case <-tick.C:
 					s.reapBatch()
+					s.gcTerminal()
+					s.ttlCheckTick()
 				}
 			}
 		}()
@@ -119,7 +215,12 @@ func (s *Supervisor) Start() {
 }
 
 // Stop halts the loop (daemon shutdown).
-func (s *Supervisor) Stop() { close(s.stop) }
+// Stop signals the loop and JOINS it (a caller tearing down the temp dir
+// must not race the reaper's final persist).
+func (s *Supervisor) Stop() {
+	s.stopOnce.Do(func() { close(s.stop) })
+	<-s.loopDone // closed at construction (never started) or by loop exit (joined)
+}
 
 // OnDead registers the death-notification callback (events push).
 func (s *Supervisor) OnDead(fn func(handleID string, terminal string)) {
@@ -141,7 +242,7 @@ func (s *Supervisor) ExecAsync(requestID, cmd, ownerMachine string, pgid int) (h
 			}
 		}
 	}
-	if len(s.procs) >= ProcTableCap {
+	if len(s.runningProcsLocked()) >= ProcTableCap {
 		// D-24 typed refusal: legible failure, not resource collapse
 		return "", false, fmt.Errorf("process table full (%d): typed cap refused, batch jobs need a config bump", ProcTableCap)
 	}
@@ -171,6 +272,39 @@ func (s *Supervisor) Wait(handleID string) (*Proc, bool) {
 	return &cp, true
 }
 
+// ExitFilePath returns the wrapper exit file for a handle (server wires it
+// into exitFileFor at construction — one path discipline, two consumers).
+func (s *Supervisor) ExitFilePath(handleID string) string {
+	return filepath.Join(s.dir, "exit-"+handleID)
+}
+
+// SetPGID backfills the group leader pid after the fork (ExecAsync reserves
+// the row first so the cap + idempotency gates see the allocation).
+func (s *Supervisor) SetPGID(handleID string, pgid int) {
+	s.mu.Lock()
+	if p, ok := s.procs[handleID]; ok {
+		p.PGID = pgid
+	}
+	s.mu.Unlock()
+	// persist the correction (boot rescan reads pgid)
+	s.mu.Lock()
+	p, ok := s.procs[handleID]
+	s.mu.Unlock()
+	if ok {
+		_ = s.persist(p)
+	}
+}
+
+// Remove rolls back a reserved row (fork failed — a processless row would
+// make the ledger lie about capacity).
+func (s *Supervisor) Remove(handleID string) {
+	s.mu.Lock()
+	delete(s.procs, handleID)
+	delete(s.killMarks, handleID)
+	s.mu.Unlock()
+	_ = os.Remove(filepath.Join(s.dir, handleID+".json"))
+}
+
 // KillByPgid finds the row owning this pgid (cross-axis kill vocabulary).
 func (s *Supervisor) KillByPgid(pgid int) error {
 	s.mu.Lock()
@@ -188,9 +322,12 @@ func (s *Supervisor) KillByPgid(pgid int) error {
 	return s.Kill(handleID)
 }
 
-// Kill signals the process group (identity-checked: the row's pgid must
-// still own /proc/<pgid> — starttime drift makes us refuse rather than
-// wrong-kill, D-05's companion-side twin).
+// Kill signals the process group. Identity guard: the row's pgid must be a
+// group the daemon forked itself (setsid'd leader we recorded at ExecAsync);
+// pgids ≤ 1 are refused outright. A full starttime comparison lands with the
+// pidfd endgame (D-05) — today the fork-origin invariant is the guard.
+// Liveness: syscall.Kill(-pgid, 0) — the LEADER may be reaped while group
+// members live, and /proc/<leader> alone would refuse a live group.
 func (s *Supervisor) Kill(handleID string) error {
 	s.mu.Lock()
 	p, ok := s.procs[handleID]
@@ -222,36 +359,49 @@ func (s *Supervisor) List() []Proc {
 
 // reapBatch probes every running row once per tick (batch, not per-handle).
 func (s *Supervisor) reapBatch() {
+	// Snapshot running candidates under lock; wrapper-file reads + persists
+	// happen OUTSIDE s.mu (disk I/O under the lock stalls every RPC — m3).
+	// killMarks still reads inline in phase 1: pure map lookup, no I/O.
 	s.mu.Lock()
-	var dead []*Proc
+	var cands []*Proc
 	for _, p := range s.procs {
-		if p.State != ProcRunning {
-			continue
+		if p.State == ProcRunning && !pidAlive(p.PGID) {
+			cands = append(cands, p)
 		}
-		if pidAlive(p.PGID) {
-			continue
-		}
-		// exit code is unknowable from outside the child — the wrapper file
-		// is the channel (T9 may add one; today: group-kill by us → signaled,
-		// vanish without our kill → exit_unknown, honest per D-21).
-		// killMarks read inline: s.mu is already held (killedByUs would
-		// self-deadlock — the one lock discipline this file must keep).
-		if s.killMarks[p.HandleID] {
-			p.State = ProcSignaled
-			p.ExitedAt = now()
-		} else {
-			p.State = ProcUnknown
-			p.ExitedAt = now()
-		}
-		dead = append(dead, p)
-		s.persist(p)
 	}
 	fns := make([]func(string, string), len(s.dead))
 	copy(fns, s.dead)
 	s.mu.Unlock()
-	for _, p := range dead {
+
+	type done struct {
+		id, state string
+	}
+	var dones []done
+	for _, p := range cands {
+		// Terminal truth resolution order (D-21): wrapper exit file first
+		// (the child recorded its own code), then our kill-intent marker
+		// (signaled), then honest unknown.
+		s.mu.Lock()
+		marked := s.killMarks[p.HandleID]
+		s.mu.Unlock()
+		state := ProcUnknown
+		if term := s.readWrapperExit(p.HandleID); term != "" { // disk I/O, lock-free
+			state = term
+		} else if marked {
+			state = ProcSignaled
+		}
+		s.mu.Lock()
+		if cur, ok := s.procs[p.HandleID]; ok && cur.State == ProcRunning {
+			cur.State = state
+			cur.ExitedAt = now()
+			dones = append(dones, done{p.HandleID, state})
+			s.persist(cur)
+		}
+		s.mu.Unlock()
+	}
+	for _, d := range dones {
 		for _, fn := range fns {
-			fn(p.HandleID, p.State)
+			fn(d.id, d.state)
 		}
 	}
 }
@@ -261,6 +411,38 @@ func (s *Supervisor) MarkKilledByUs(handleID string) {
 	s.mu.Lock()
 	s.killMarks[handleID] = true
 	s.mu.Unlock()
+}
+
+// readWrapperExit maps the wrapper file to a terminal state string:
+// "7" → exited(7); "sig:9" → signaled(9); missing/garbage → "" (fall through).
+func (s *Supervisor) readWrapperExit(handleID string) string {
+	if s.exitFileFor == nil {
+		return ""
+	}
+	data, err := os.ReadFile(s.exitFileFor(handleID))
+	if err != nil {
+		return ""
+	}
+	out := strings.TrimSpace(string(data))
+	if strings.HasPrefix(out, "sig:") {
+		return ProcSignaled + "(" + strings.TrimPrefix(out, "sig:") + ")"
+	}
+	if isDigitsStr(out) {
+		return "exited(" + out + ")"
+	}
+	return ""
+}
+
+func isDigitsStr(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // persist writes one row atomically (tmp+rename in-table-dir).
@@ -278,8 +460,13 @@ func pidAlive(pgid int) bool {
 	if pgid <= 1 {
 		return false // never "alive" on init — refuse the wrong-probe trap
 	}
-	_, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pgid)))
-	return err == nil
+	// Group-level probe: the LEADER may be reaped while members live, and
+	// kill(0) on -pgid answers "does this group still have processes".
+	if syscall.Kill(-pgid, 0) == nil {
+		return true
+	}
+	// EPERM means the group exists but isn't ours — still alive.
+	return errors.Is(syscall.Kill(-pgid, 0), syscall.EPERM)
 }
 
 func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }

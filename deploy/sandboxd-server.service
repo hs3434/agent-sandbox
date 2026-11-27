@@ -1,0 +1,22 @@
+# sandboxd-server systemd user service (D-02 vscode lifecycle: daemon
+# decoupled from connections; crash → restart within RestartSec).
+# Install (on the target machine, as the owning user):
+#   cp sandboxd-server.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now sandboxd-server
+# Human gate note (D-13): this unit is operator-installed, never agent-pushed.
+
+[Unit]
+Description=sandboxd-server companion daemon (agent-sandbox)
+After=network.target
+
+[Service]
+ExecStart=%h/.sandboxd-server/install-%i/sandboxd-server --home %h --owner_id %i --ttl 900
+Restart=always
+RestartSec=2
+# D-17 belt: the unit refuses system-level install; user service only
+KillSignal=SIGTERM
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target

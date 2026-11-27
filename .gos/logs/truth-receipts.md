@@ -1,0 +1,8 @@
+2026-11-27T05:21:27.852Z T1 replay-verified: ["bash","/tmp/opencode/t1check.sh"] :: bootstrap writes conn.json (0600) with token; sandboxd reports mode:companion in
+2026-11-27T05:23:42.935Z T2 replay-verified: ["bash","-c","cat /tmp/opencode/t2full.log | grep -E \"HANDLE|TERMINAL\""] :: async exec on companion machine returns handle; after process death ledger row f
+2026-11-27T05:26:30.803Z T3 replay-verified: ["bash","-c","grep -E \"HANDLE|TORN_EXEC|DISCONNECT_VISIBLE|REATTACH|HANDLE_WAITABLE\" /tmp/opencode/t3full.log"] :: iptables drop: in-flight exec fails fast with handle_id; machine disconnected <=
+2026-11-27T05:28:16.075Z T3 replay-verified: ["bash","/tmp/opencode/t3check2.sh"] :: iptables drop: in-flight exec fails fast with handle_id; machine disconnected <=
+2026-11-27T05:41:55.269Z T3 replay-verified: ["bash","/tmp/opencode/t3check3.sh"] :: iptables drop: in-flight exec fails fast with handle_id; machine disconnected <=
+2026-11-27T05:56:47.698Z T3 replay-verified: ["bash","-c","grep -E \"HANDLE|TORN_EXEC|DISCONNECT_VISIBLE|REATTACH|HANDLE_WAITABLE\" /tmp/opencode/t3v5.log"] :: iptables drop: in-flight exec fails fast with handle_id; machine disconnected <=
+2026-11-27T05:58:43.843Z T4 replay-verified: ["bash","-c","grep -E \"durable\" /tmp/opencode/t4full.log"] :: docker container non-workspace path file_read/file_write succeed via exec channe
+2026-11-27T05:59:18.684Z T5 replay-verified: ["bash","-c","cat /work/run/projects/bio-24/my_projects/agent-sandbox/.gos/task/3f7acd2f/evidence/t5-bootstrap-gates.log"] :: proto mismatch with pinned sha256 reinstalls; unpinned hash falls back to thin w

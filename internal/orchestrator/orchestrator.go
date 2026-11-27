@@ -110,16 +110,45 @@ func (o *Orchestrator) reconcileHandles(be lifecycleOps) {
 		return // ledger read failure is not a boot failure
 	}
 	for _, h := range rows {
-		wh, ok := be.(interface {
-			WaitHandle(ctx context.Context, handleID string) (*container.Handle, error)
-		})
-		if !ok {
-			return
+		// companion rows route to their machine's daemon truth (D-21: the
+		// ledger must never assert a terminal state a live process refutes);
+		// docker rows keep the exec-inspect probe.
+		var resolved bool
+		var running bool
+		if h.ExeEnv == "companion" {
+			if mc, ok := o.backends[lastSeg(string(h.EnvID))]; ok {
+				if wh, ok := mc.(interface {
+					WaitHandle(ctx context.Context, handleID string) (*container.Handle, error)
+				}); ok {
+					ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+					got, err := wh.WaitHandle(ctx, h.ID)
+					cancel()
+					if err == nil && got != nil {
+						resolved = true
+						running = got.State == container.HandleRunning
+					}
+				}
+			}
+		} else {
+			wh, ok := be.(interface {
+				WaitHandle(ctx context.Context, handleID string) (*container.Handle, error)
+			})
+			if !ok {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			got, err := wh.WaitHandle(ctx, h.ID)
+			cancel()
+			if err == nil && got != nil {
+				resolved = true
+				running = got.State == container.HandleRunning
+			}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		got, err := wh.WaitHandle(ctx, h.ID)
-		cancel()
-		if err != nil || got == nil || got.State != container.HandleRunning {
+		// unresolved (probe failed / companion absent) is NOT a death fact:
+		// leave the row running — the next reconcile or death event resolves
+		// it honestly (fabricating exit_unknown for a maybe-live process is
+		// the exact lie D-21 bans).
+		if resolved && !running {
 			_ = o.store.MarkHandleDead(h.ID, "exit_unknown")
 			o.auditEvent(resource.ResourceID(h.EnvID), "process_event", "reconcile: handle dead at boot", h.ID+" exit_unknown")
 		}

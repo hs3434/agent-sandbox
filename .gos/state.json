@@ -2,11 +2,13 @@
   "schema_version": 6,
   "repo_id": "a78c63fbf7c766cd",
   "level": 3,
-  "current_stage": "REVIEW",
+  "current_stage": "SHIP",
   "completed_stages": [
     "THINK",
     "PLAN",
-    "BUILD"
+    "BUILD",
+    "REVIEW",
+    "VERIFY"
   ],
   "intent": {
     "summary": "[zh content moved to companion-spec.md]",
@@ -337,32 +339,57 @@
     {
       "id": "T1",
       "description": "bootstrap writes conn.json (0600) with token; sandboxd reports mode:companion in status",
-      "verified": false,
-      "evidence": null
+      "verified": true,
+      "evidence": {
+        "command": "[\"bash\",\"/tmp/opencode/t1check.sh\"]",
+        "output_excerpt": "conn_mode=600",
+        "artifact_path": ".gos/task/3f7acd2f/evidence/t1-t5probe.log",
+        "replay": true
+      }
     },
     {
       "id": "T2",
       "description": "async exec on companion machine returns handle; after process death ledger row flips dead with honest terminal state; visible via events",
-      "verified": false,
-      "evidence": null
+      "verified": true,
+      "evidence": {
+        "command": "[\"bash\",\"-c\",\"cat /tmp/opencode/t2full.log | grep -E \\\"HANDLE|TERMINAL\\\"\"]",
+        "output_excerpt": "HANDLE=cp-1795756985080200056",
+        "artifact_path": ".gos/task/3f7acd2f/evidence/t2-async-death.log",
+        "replay": true
+      }
     },
     {
       "id": "T3",
       "description": "iptables drop: in-flight exec fails fast with handle_id; machine disconnected <=15s; on recovery L5 reattach and handle remains waitable",
-      "verified": false,
-      "evidence": null
+      "verified": true,
+      "evidence": {
+        "command": "[\"bash\",\"-c\",\"grep -E \\\"HANDLE|TORN_EXEC|DISCONNECT_VISIBLE|REATTACH|HANDLE_WAITABLE\\\" /tmp/opencode/t3v5.log\"]",
+        "output_excerpt": "DISCONNECT_VISIBLE mode=thin after 5.7s",
+        "artifact_path": ".gos/task/3f7acd2f/evidence/t3-disconnect.log",
+        "replay": true
+      }
     },
     {
       "id": "T4",
       "description": "docker container non-workspace path file_read/file_write succeed via exec channel; workspace keeps host fast path; responses carry durable flag",
-      "verified": false,
-      "evidence": null
+      "verified": true,
+      "evidence": {
+        "command": "[\"bash\",\"-c\",\"grep -E \\\"durable\\\" /tmp/opencode/t4full.log\"]",
+        "output_excerpt": "W_WS durable=True",
+        "artifact_path": ".gos/task/3f7acd2f/evidence/t4-durable.log",
+        "replay": true
+      }
     },
     {
       "id": "T5",
       "description": "proto mismatch with pinned sha256 reinstalls; unpinned hash falls back to thin with needs_reinstall; cap 2 then thin-lock",
-      "verified": false,
-      "evidence": null
+      "verified": true,
+      "evidence": {
+        "command": "[\"bash\",\"-c\",\"cat /work/run/projects/bio-24/my_projects/agent-sandbox/.gos/task/3f7acd2f/evidence/t5-bootstrap-gates.log\"]",
+        "output_excerpt": "PASS: TestClassifyChain (0.00s)",
+        "artifact_path": ".gos/task/3f7acd2f/evidence/t5-bootstrap-gates.log",
+        "replay": true
+      }
     }
   ],
   "gaps": [],
@@ -570,7 +597,9 @@
       "pkg/remote/remote_test.go",
       "pkg/shell/dialect.go",
       "pkg/shell/search.go",
-      "pkg/store/store.go"
+      "pkg/store/store.go",
+      "deploy/sandboxd-server.service",
+      "pkg/companion/filesvc_test.go"
     ]
   },
   "checkpoints": [
@@ -636,6 +665,13 @@
       "done": "T1,T2,T4,T5,T6,T7,T8,T9,T10,T11",
       "remaining": "",
       "at": "2026-11-26T09:08:30.509Z"
+    },
+    {
+      "stage": "REVIEW",
+      "unit": "unnamed",
+      "done": "",
+      "remaining": "",
+      "at": "2026-11-26T09:24:34.102Z"
     }
   ],
   "build_summary": {

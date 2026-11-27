@@ -15,24 +15,24 @@ import (
 // registration wraps the same functions).
 func (s *Server) handlersMap() map[string]func(ctx context.Context, args json.RawMessage) (any, error) {
 	return map[string]func(context.Context, json.RawMessage) (any, error){
-		"container_create":  s.toolContainerCreate,
-		"container_remove":  s.toolContainerRemove,
-		"container_build":   s.toolContainerBuild,
-		"container_images":  s.toolContainerImages,
-		"shell_exec":        s.toolShellExec,
-		"shell_new":         s.toolShellNew,
-		"shell_remove":      s.toolShellRemove,
-		"shell_list":        s.toolShellList,
-		"process_wait":      s.toolProcessWait,
-		"file_read":         s.toolFileRead,
-		"file_write":        s.toolFileWrite,
-		"file_patch":        s.toolFilePatch,
-		"file_search":       s.toolFileSearch,
-		"status":            s.toolStatus,
-		"events":            s.toolEvents,
-		"resource_inspect":  s.toolInspect,
-		"state_get":         s.toolStateGet,
-		"state_put":         s.toolStatePut,
+		"container_create": s.toolContainerCreate,
+		"container_remove": s.toolContainerRemove,
+		"container_build":  s.toolContainerBuild,
+		"container_images": s.toolContainerImages,
+		"shell_exec":       s.toolShellExec,
+		"shell_new":        s.toolShellNew,
+		"shell_remove":     s.toolShellRemove,
+		"shell_list":       s.toolShellList,
+		"process_wait":     s.toolProcessWait,
+		"file_read":        s.toolFileRead,
+		"file_write":       s.toolFileWrite,
+		"file_patch":       s.toolFilePatch,
+		"file_search":      s.toolFileSearch,
+		"status":           s.toolStatus,
+		"events":           s.toolEvents,
+		"resource_inspect": s.toolInspect,
+		"state_get":        s.toolStateGet,
+		"state_put":        s.toolStatePut,
 	}
 }
 
@@ -261,12 +261,12 @@ func (s *Server) toolFileSearch(ctx context.Context, args json.RawMessage) (any,
 		return nil, fmt.Errorf("pattern is required")
 	}
 	res, err := s.deps.Orch.FileSearch(ctx, shell.SearchParams{
-		Pattern:    pattern,
-		Path:       argStr(args, "path"),
-		SearchType: argStr(args, "search_type"),
-		FileGlob:   argStr(args, "file_glob"),
-		Limit:      argInt(args, "limit"),
-		Offset:     argInt(args, "offset"),
+		Pattern:     pattern,
+		Path:        argStr(args, "path"),
+		SearchType:  argStr(args, "search_type"),
+		FileGlob:    argStr(args, "file_glob"),
+		Limit:       argInt(args, "limit"),
+		Offset:      argInt(args, "offset"),
 		OutputMode:  argStr(args, "output_mode"),
 		Context:     argInt(args, "context"),
 		TimeoutSecs: argInt(args, "timeout_seconds"),
@@ -451,4 +451,3 @@ func (s *Server) resolveID(id string) string {
 	}
 	return ""
 }
-

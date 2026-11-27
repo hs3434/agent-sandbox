@@ -84,10 +84,16 @@ func (o *Orchestrator) ShellExec(ctx context.Context, machine, shellID string, a
 		// ledger = the platform's record of what we manage (AD-030): a
 		// running async process is ours the moment it exists. Write-ahead —
 		// if we crash here, the ledger row (created) is the recovery seed.
+		exeEnv := "docker"
+		if _, isComp := be.(interface {
+			ReconcileLedger(ctx context.Context) ([]map[string]any, error)
+		}); isComp {
+			exeEnv = "companion" // boot reconcile routes this row to daemon truth (D-21)
+		}
 		if err := o.store.PutHandle(store.Handle{
 			ID: h.ID, EnvID: h.EnvID, PGID: h.PGID, Cmd: h.Cmd,
 			State:     store.HandleRunning,
-			ExeEnv:    "docker",
+			ExeEnv:    exeEnv,
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		}); err != nil {
 			return nil, fmt.Errorf("ledger write (write-ahead): %w", err)
@@ -285,10 +291,10 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 		if h, ok := be.(interface{ Health() string }); ok {
 			row["state"] = h.Health()
 		}
-		// machine mode enum (T2, D-01/D-29): companion lands in W2+; P0/W1
-		// ships the enum field with thin as the only producer. Agent-neutral
-		// wording lives in the renderer (status tool), never install hints.
-		row["mode"] = o.machineMode(name)
+		// machine mode enum (T2, D-01/D-29). Marshal to string HERE — the
+		// renderer compares string constants and MachineMode is a distinct
+		// type (interface inequality would silently skip every case).
+		row["mode"] = string(o.machineMode(name))
 		axis := "ssh"
 		if k, ok := be.(interface{ Axis() string }); ok {
 			axis = k.Axis()
@@ -309,7 +315,7 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 	// ssh targets it can reach. A future axis (k8s/vm) adds its own key
 	// instead of overloading these.
 	out := map[string]any{
-		"docker":  envs, // collection: body name → body facts
+		"docker":  envs,           // collection: body name → body facts
 		"default": o.defaultEnv(), // pointer: the name of one body (the workbench)
 	}
 	// axis collections: "ssh" always present in P0 (stable schema), a future
@@ -323,11 +329,44 @@ func (o *Orchestrator) Status(ctx context.Context) (map[string]any, error) {
 	return out, nil
 }
 
-// HandleState resolves one handle's ledger row (process_wait surface).
+// HandleState resolves one handle (process_wait surface). Ledger-only is a
+// lie while a companion lives: its reaper may have reaped the death after
+// our last event pull, so running rows are pulled from daemon truth FIRST
+// (D-21: the ledger must not assert a live process's death — nor a dead
+// process's life).
 func (o *Orchestrator) HandleState(handleID string) (map[string]any, error) {
 	h, err := o.store.GetHandle(handleID)
 	if err != nil {
-		return nil, fmt.Errorf("handle %q unknown (ledger has no such row)", handleID)
+		return nil, fmt.Errorf("handle %q: %w", handleID, err)
+	}
+	if h.State == "running" && h.ExeEnv == "companion" {
+		if mc, ok := o.backends[lastSeg(string(h.EnvID))]; ok {
+			if wh, ok := mc.(interface {
+				WaitHandle(ctx context.Context, handleID string) (*container.Handle, error)
+			}); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				got, err := wh.WaitHandle(ctx, h.ID)
+				cancel()
+				if err != nil {
+					// first pull after an idle gap often wakes a dropped
+					// bridge (transport err → drop): ONE retry on the fresh
+					// dial before trusting the ledger's stale row
+					ctx2, cancel2 := context.WithTimeout(context.Background(), 15*time.Second)
+					got, err = wh.WaitHandle(ctx2, h.ID)
+					cancel2()
+				}
+				if err == nil && got != nil {
+					if got.State == container.HandleRunning {
+						h.State = "running"
+					} else {
+						h.State = "dead"
+						h.ExitReason = fmt.Sprintf("exited(%d)", got.ExitCode)
+					}
+					_ = o.store.PutHandle(*h) // pull-truth lands in the ledger too
+				}
+				// persistent pull error: ledger stands (honest last-known, D-21)
+			}
+		}
 	}
 	out := map[string]any{
 		"handle_id":   h.ID,
@@ -496,7 +535,6 @@ func (o *Orchestrator) markHandleDead(handleID string, terminal string) {
 
 // searchGlob / listFiles: P0 host-side walk for the docker backend (workdir
 // is host-visible via the invariant — the one deterministic bridge).
-
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {

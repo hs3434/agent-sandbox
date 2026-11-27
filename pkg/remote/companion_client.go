@@ -12,9 +12,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"log"
+	"net"
 	"os/exec"
+	"runtime"
 	"sync"
 	"time"
 
@@ -33,20 +34,36 @@ const (
 // CompanionClient owns one machine's companion channel: dial-on-demand,
 // sticky connection, L2 vocabulary for status, typed failures for routing.
 type CompanionClient struct {
-	mu       sync.Mutex
-	backend  *Backend // the thin backend whose master/machine we ride
-	machine  string   // machine name (backend registry key)
-	ownerID  string   // platform owner for socket addressing (D-18)
-	conn     net.Conn // live protocol connection (nil = down)
-	br       *bufio.Reader
-	state    string // connected | disconnected | reconnecting
-	lastErr  string
-	fetchTTL time.Time // conn.json re-fetch throttle (adopt path needs fresh tokens)
+	mu      sync.Mutex
+	backend *Backend // the thin backend whose master/machine we ride
+	machine string   // machine name (backend registry key)
+	ownerID string   // platform owner for socket addressing (D-18)
+	conn    net.Conn // live protocol connection (nil = down)
+	br      *bufio.Reader
+	state   string // connected | disconnected | reconnecting
+	lastErr string
+	callMu  sync.Mutex // M5: one in-flight call per client — br is not synchronized
+	dialMu  sync.Mutex // M6: single-flight dial — losers must not leak their bridge
+	dialing bool
+
+	deadFn     func(handleID, terminal string) // death events → platform ledger
+	deadMu     sync.Mutex
+	eventsOnce sync.Once
+	stopEvents chan struct{}
+
+	pendingMu sync.Mutex
+	pending   map[string]chan callResult // request-id → reply slot (pump-read mode)
+	pumpArmed bool
+}
+
+type callResult struct {
+	msg *protocol.Message
+	err error
 }
 
 // NewCompanionClient binds a client to one declared machine.
 func (b *Backend) NewCompanionClient(machine, ownerID string) *CompanionClient {
-	return &CompanionClient{backend: b, machine: machine, ownerID: ownerID, state: "disconnected"}
+	return &CompanionClient{backend: b, machine: machine, ownerID: ownerID, state: "disconnected", stopEvents: make(chan struct{}), pending: map[string]chan callResult{}}
 }
 
 // State exposes the L2 vocabulary (§4.3 status reads this).
@@ -85,7 +102,7 @@ func (c *CompanionClient) fetchConn(ctx context.Context) (*companion.Conn, error
 	ctx2, cancel := context.WithTimeout(ctx, companionDialTO)
 	defer cancel()
 	cmd := exec.CommandContext(ctx2, "ssh", append(c.backend.sshBaseArgs(st),
-		"cat ~/.sandboxd-server/conn.json")...)
+		"cat ~/.sandboxd-server/"+companion.ConnFileName(c.ownerID))...)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("fetch conn.json: %v: %s", err, tailErr(err, 200))
@@ -138,7 +155,7 @@ func (c *CompanionClient) dialConn(ctx context.Context, conn *companion.Conn) (n
 		Token:        conn.Token,
 		ProtoVersion: companion.ProtoVersion,
 		OS:           hostOSForMatrix(st.target.OSType),
-		Arch:         "amd64",
+		Arch:         runtime.GOARCH, // truthful matrix field (D-20)
 		OwnerID:      c.ownerID,
 	}
 	if err := protocol.WriteHandshake(pc, hs); err != nil {
@@ -203,7 +220,19 @@ func (c *CompanionClient) ensureConnected(ctx context.Context) (net.Conn, *bufio
 		c.mu.Unlock()
 		return conn, br, nil
 	}
+	if c.dialing {
+		// M6 single-flight: a concurrent dial owns the slot; fail fast (the
+		// caller retries and reuses the winner's conn — no leaked bridges)
+		c.mu.Unlock()
+		return nil, nil, fmt.Errorf("companion %q: dial in flight", c.machine)
+	}
+	c.dialing = true
 	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.dialing = false
+		c.mu.Unlock()
+	}()
 	c.setState("reconnecting", "dialing")
 	connJSON, err := c.fetchConn(ctx)
 	if err != nil {
@@ -227,7 +256,99 @@ func (c *CompanionClient) ensureConnected(ctx context.Context) (net.Conn, *bufio
 // protocol-owned). On transport failure the channel drops to disconnected
 // and the error carries the machine + reason (fail-fast, no silent retry
 // storm — the next Call re-dials).
+// OnDead registers the death-event consumer (platform ledger flip). The
+// first registration arms the events subscription (one dedicated bridge —
+// request/response conns stay synchronous).
+func (c *CompanionClient) OnDead(fn func(handleID, terminal string)) {
+	c.pendingMu.Lock()
+	first := c.deadFn == nil
+	c.deadFn = fn
+	if first {
+		c.pumpArmed = true // Call switches to pump-routed replies
+	}
+	c.pendingMu.Unlock()
+	if first {
+		c.eventsOnce.Do(func() { go c.runEvents() })
+	}
+}
+
+// runEvents holds a dedicated protocol conn, subscribes to "events", and
+// forwards process.exited pushes to the hook. Transport errors retry with
+// backoff — the ledger catches up on the next push or the next pull (D-21).
+func (c *CompanionClient) runEvents() {
+	for {
+		c.deadMu.Lock()
+		fn := c.deadFn
+		c.deadMu.Unlock()
+		if fn == nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ec, ebr, err := c.ensureConnected(ctx)
+		cancel()
+		if err == nil {
+			req := &protocol.Request{ID: fmt.Sprintf("ev-%d", time.Now().UnixNano()), Method: "events"}
+			if err := protocol.WriteMessage(ec, req); err == nil {
+				// consume THIS conn's replies until death; each pushed line
+				// that names process.exited goes to the hook
+				c.pumpEvents(ec, ebr, req.ID, fn)
+			}
+		}
+		select {
+		case <-time.After(2 * time.Second):
+		case <-c.stopEvents:
+			return
+		}
+	}
+}
+
+// pumpEvents reads pushed lines on the events conn (request replies on the
+// main conn are untouched). Returns when the conn dies.
+func (c *CompanionClient) pumpEvents(ec net.Conn, br *bufio.Reader, subID string, fn func(handleID, terminal string)) {
+	for {
+		m, err := protocol.ReadMessage(br)
+		if err != nil {
+			c.drop(err) // shared state: main conn rides the same daemon
+			return
+		}
+		if m.ID == subID {
+			continue // subscription ack
+		}
+		// request reply? route to the pending waiter (callViaPump)
+		if m.ID != "" {
+			c.pendingMu.Lock()
+			ch, ok := c.pending[m.ID]
+			c.pendingMu.Unlock()
+			if ok {
+				ch <- callResult{msg: m}
+				continue
+			}
+		}
+		var ev struct {
+			Event    string `json:"event"`
+			HandleID string `json:"handle_id"`
+			Terminal string `json:"terminal"`
+		}
+		if jsonErr := json.Unmarshal(m.Raw, &ev); jsonErr == nil && ev.Event == "process.exited" && ev.HandleID != "" {
+			fn(ev.HandleID, ev.Terminal)
+		}
+	}
+}
+
 func (c *CompanionClient) Call(ctx context.Context, method string, params map[string]any) (map[string]any, error) {
+	// ONE reader (the events pump when OnDead is armed; direct read here
+	// otherwise) owns the conn. With the pump armed, Call registers a
+	// pending reply slot and the pump routes the response to it — two
+	// competing readers on one conn was the recovery deadlock (each held
+	// the other's EOF/drop; every post-restart dial starved).
+	c.pendingMu.Lock()
+	pumpArmed := c.pumpArmed
+	c.pendingMu.Unlock()
+	if pumpArmed {
+		return c.callViaPump(ctx, method, params)
+	}
+	c.callMu.Lock()
+	defer c.callMu.Unlock()
 	pc, br, err := c.ensureConnected(ctx)
 	if err != nil {
 		return nil, err
@@ -252,27 +373,60 @@ func (c *CompanionClient) Call(ctx context.Context, method string, params map[st
 			c.drop(r.err)
 			return nil, fmt.Errorf("companion %q: transport: %w", c.machine, r.err)
 		}
-		if r.msg.ID != req.ID {
-			return nil, fmt.Errorf("companion %q: response id mismatch (got %q want %q)", c.machine, r.msg.ID, req.ID)
-		}
-		if raw := r.msg.Raw; raw != nil {
-			var envelope struct {
-				Result map[string]any    `json:"result"`
-				Error  *protocol.ProtoError `json:"error"`
-			}
-			if err := json.Unmarshal(raw, &envelope); err == nil {
-				if envelope.Error != nil {
-					return nil, envelope.Error
-				}
-				if envelope.Result != nil {
-					return envelope.Result, nil
-				}
-			}
-		}
-		return r.msg.Params, nil
+		return c.interpret(r.msg, req.ID)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// callViaPump writes the request and waits for the pump to route our reply.
+func (c *CompanionClient) callViaPump(ctx context.Context, method string, params map[string]any) (map[string]any, error) {
+	pc, _, err := c.ensureConnected(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req := &protocol.Request{ID: fmt.Sprintf("r-%d", time.Now().UnixNano()), Method: method, Params: params}
+	if err := protocol.WriteMessage(pc, req); err != nil {
+		c.drop(err)
+		return nil, err
+	}
+	ch := make(chan callResult, 1)
+	c.pendingMu.Lock()
+	c.pending[req.ID] = ch
+	c.pendingMu.Unlock()
+	defer func() {
+		c.pendingMu.Lock()
+		delete(c.pending, req.ID)
+		c.pendingMu.Unlock()
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			return nil, fmt.Errorf("companion %q: transport: %w", c.machine, r.err)
+		}
+		return c.interpret(r.msg, req.ID)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// interpret decodes one correlated response (shared by both read paths).
+func (c *CompanionClient) interpret(msg *protocol.Message, wantID string) (map[string]any, error) {
+	if raw := msg.Raw; raw != nil {
+		var envelope struct {
+			Result map[string]any       `json:"result"`
+			Error  *protocol.ProtoError `json:"error"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err == nil {
+			if envelope.Error != nil {
+				return nil, envelope.Error
+			}
+			if envelope.Result != nil {
+				return envelope.Result, nil
+			}
+		}
+	}
+	return msg.Params, nil
 }
 
 // drop tears the channel down and records the L2 flip.
@@ -287,6 +441,13 @@ func (c *CompanionClient) drop(why error) {
 	if conn != nil {
 		_ = conn.Close()
 	}
+	// wake pump-routed waiters: their conn died; hanging to ctx is a lie
+	c.pendingMu.Lock()
+	for id, ch := range c.pending {
+		ch <- callResult{err: why}
+		delete(c.pending, id)
+	}
+	c.pendingMu.Unlock()
 }
 
 // ProtoError reports typed (policy) failures from the companion side —
@@ -335,6 +496,40 @@ func (c *CompanionClient) FileWriteViaProtocol(ctx context.Context, path, conten
 	}
 	durable, _ := res["durable"].(bool)
 	return durable, nil
+}
+
+// FilePatchViaProtocol applies old→new on the companion (read-modify-write
+// happens target-side — the file text never crosses the wire twice).
+func (c *CompanionClient) FilePatchViaProtocol(ctx context.Context, path, oldS, newS string, all bool) (int, error) {
+	res, err := c.Call(ctx, "file.patch", map[string]any{
+		"path": path, "old": oldS, "new": newS, "all": all})
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res["replacements"].(float64)
+	return int(n), nil
+}
+
+// FileSearchViaProtocol runs the search ON THE TARGET (truth T5): the
+// daemon executes rg→grep locally; only match lines cross the wire.
+// FileSearchQuery is the public search request (unexported types in public
+// signatures are unusable — code-quality m2).
+type FileSearchQuery struct {
+	Root     string
+	Pattern  string
+	FileGlob string
+	Limit    int
+}
+
+func (c *CompanionClient) FileSearchViaProtocol(ctx context.Context, p FileSearchQuery) (string, string, error) {
+	res, err := c.Call(ctx, "file.search", map[string]any{
+		"root": p.Root, "pattern": p.Pattern, "glob": p.FileGlob, "limit": p.Limit})
+	if err != nil {
+		return "", "", err
+	}
+	matches, _ := res["matches"].(string)
+	diag, _ := res["diagnostics"].(string)
+	return matches, diag, nil
 }
 
 // Close releases the channel (machine shutdown path).

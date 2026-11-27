@@ -4,7 +4,13 @@
 // probe→adopt→thin. The heaviest operation (install) is never a fallback.
 package companion
 
-import "fmt"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+)
 
 // BootstrapPlan is what one deploy step needs: everything is data, execution
 // stays with the ssh transport (pkg/remote) — this package never dials.
@@ -65,4 +71,48 @@ func (p *BootstrapPlan) InstallAllowed() error {
 // contract (D-30): what we print must survive a paste.
 func (p *BootstrapPlan) StartInstruction() string {
 	return "run on the target machine: " + p.StartCmd
+}
+
+// ReinstallDecision is the D-15 gate outcome for one version mismatch.
+type ReinstallDecision string
+
+const (
+	// ReinstallAllowed: pinned hash matches the staged binary → counter
+	// increments (caller persists), reinstall proceeds.
+	ReinstallAllowed ReinstallDecision = "allowed"
+	// ReinstallThinLock: mismatch hash OR counter at/over cap → thin-lock
+	// until a human re-pins.
+	ReinstallThinLock ReinstallDecision = "thin-lock"
+)
+
+// DecideReinstall is the D-15 decision function: auto-reinstall ONLY when
+// the staged binary's sha256 equals the pin AND the counter is below cap.
+// Any other hash → thin-lock (D-15's why-not: TOFU is what attackers do).
+func DecideReinstall(pin *PinRecord, stagedSHA256 string) (ReinstallDecision, *PinRecord) {
+	if pin == nil {
+		return ReinstallThinLock, nil // no pin = channel closed
+	}
+	if pin.SHA256 != stagedSHA256 {
+		return ReinstallThinLock, pin
+	}
+	if pin.Reinstalls >= ReinstallCap {
+		return ReinstallThinLock, pin // cap hit: lock until human re-pins
+	}
+	next := *pin
+	next.Reinstalls++
+	return ReinstallAllowed, &next
+}
+
+// ComputeSHA256 hashes a staged binary (the pin must match this exactly).
+func ComputeSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
