@@ -67,7 +67,7 @@ func (m *remoteMachine) CompanionState() string {
 }
 
 // Axis names the deployed axis (status groups machines by axis).
-func (m remoteMachine) Axis() string {
+func (m *remoteMachine) Axis() string {
 	if m.axis == "" {
 		return "ssh"
 	}
@@ -109,7 +109,7 @@ func (m *remoteMachine) nextIntent() int64 {
 // ExecAsync supervises through the companion when active (T11): the handle
 // is the companion's, the ledger row is ours — write-ahead before return
 // (D-06 both axes, same recovery contract).
-func (m remoteMachine) ExecAsync(ctx context.Context, id resource.ResourceID, cmd string) (*container.Handle, error) {
+func (m *remoteMachine) ExecAsync(ctx context.Context, id resource.ResourceID, cmd string) (*container.Handle, error) {
 	if m.cc == nil || m.CompanionState() != "active" {
 		return nil, fmt.Errorf("machine %q: async exec needs an active companion (thin mode is blocking-only)", m.name)
 	}
@@ -139,7 +139,7 @@ func (m remoteMachine) ExecAsync(ctx context.Context, id resource.ResourceID, cm
 
 // Kill routes a group kill through the companion (asyncExecFace's second
 // member); the supervisor refuses wrong-identity kills (D-05's twin).
-func (m remoteMachine) Kill(ctx context.Context, id resource.ResourceID, pid int) error {
+func (m *remoteMachine) Kill(ctx context.Context, id resource.ResourceID, pid int) error {
 	if m.cc == nil {
 		return fmt.Errorf("machine %q: kill needs a companion channel", m.name)
 	}
@@ -152,7 +152,7 @@ func (m remoteMachine) Kill(ctx context.Context, id resource.ResourceID, pid int
 }
 
 // WaitHandle resolves through the companion ledger (sessions.list shaped).
-func (m remoteMachine) WaitHandle(ctx context.Context, handleID string) (*container.Handle, error) {
+func (m *remoteMachine) WaitHandle(ctx context.Context, handleID string) (*container.Handle, error) {
 	if m.cc == nil {
 		return &container.Handle{ID: handleID, State: container.HandleDead, ExitCode: -1}, nil
 	}
@@ -181,7 +181,7 @@ func (m remoteMachine) WaitHandle(ctx context.Context, handleID string) (*contai
 // ReconcileLedger is the L5 reattach data path (D-06 companion half):
 // sessions.list is the daemon's truth; the caller (orchestrator) merges it
 // into the platform ledger at boot and after reattach.
-func (m remoteMachine) ReconcileLedger(ctx context.Context) ([]map[string]any, error) {
+func (m *remoteMachine) ReconcileLedger(ctx context.Context) ([]map[string]any, error) {
 	if m.cc == nil {
 		return nil, fmt.Errorf("companion absent on %q", m.name)
 	}
@@ -201,7 +201,7 @@ func (m remoteMachine) ReconcileLedger(ctx context.Context) ([]map[string]any, e
 	return out, nil
 }
 
-func (m remoteMachine) Exec(ctx context.Context, id resource.ResourceID, cmd string, opts ...container.ExecOptions) (container.ExecResult, error) {
+func (m *remoteMachine) Exec(ctx context.Context, id resource.ResourceID, cmd string, opts ...container.ExecOptions) (container.ExecResult, error) {
 	var o container.ExecOptions
 	if len(opts) > 0 {
 		o = opts[0]
@@ -218,7 +218,7 @@ func (m remoteMachine) Exec(ctx context.Context, id resource.ResourceID, cmd str
 // ReadFile routes companion-first (protocol path — audit says so, T5 truth)
 // with an explicit thin fallback when the channel is down (D-18's heaviest
 // op never falls back silently; here the fallback IS the declared tier).
-func (m remoteMachine) ReadFile(ctx context.Context, id resource.ResourceID, path string) (string, error) {
+func (m *remoteMachine) ReadFile(ctx context.Context, id resource.ResourceID, path string) (string, error) {
 	if m.cc != nil && m.CompanionState() == "active" {
 		txt, _, err := m.cc.FileReadViaProtocol(ctx, path)
 		if err == nil {
@@ -237,7 +237,7 @@ func (m remoteMachine) ReadFile(ctx context.Context, id resource.ResourceID, pat
 	return m.be.ReadFile(ctx, m.name, path)
 }
 
-func (m remoteMachine) WriteFile(ctx context.Context, id resource.ResourceID, path, content string) error {
+func (m *remoteMachine) WriteFile(ctx context.Context, id resource.ResourceID, path, content string) error {
 	if m.cc != nil && m.CompanionState() == "active" {
 		if _, err := m.cc.FileWriteViaProtocol(ctx, path, content); err == nil {
 			return nil
@@ -251,7 +251,7 @@ func (m remoteMachine) WriteFile(ctx context.Context, id resource.ResourceID, pa
 
 // OpenSession starts a persistent remote shell (delegates to the backend;
 // machine name is already resolved by the orchestrator).
-func (m remoteMachine) OpenSession(ctx context.Context, _ resource.ResourceID, shellCmd []string) (io.WriteCloser, io.Reader, func(), error) {
+func (m *remoteMachine) OpenSession(ctx context.Context, _ resource.ResourceID, shellCmd []string) (io.WriteCloser, io.Reader, func(), error) {
 	// ssh dialect expects the raw shell command; "/bin/sh" works for posix,
 	// the PowerShell line for windows
 	return m.be.OpenSession(ctx, m.name, strings.Join(shellCmd, " "))
@@ -259,10 +259,10 @@ func (m remoteMachine) OpenSession(ctx context.Context, _ resource.ResourceID, s
 
 // Health reports the real connection state — never a hardcoded "connected"
 // (status must not lie: §4.3 connected/disconnected/reconnecting).
-func (m remoteMachine) Health() string { return m.be.State(m.name) }
+func (m *remoteMachine) Health() string { return m.be.State(m.name) }
 
 // TargetInfo exposes the endpoint address and OS type (where to reach it).
-func (m remoteMachine) TargetInfo() (string, string) {
+func (m *remoteMachine) TargetInfo() (string, string) {
 	t, ok := m.be.TargetOf(m.name)
 	if !ok {
 		return "", ""
