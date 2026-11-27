@@ -1,0 +1,18 @@
+winbuild (192.168.90.253, windows 10.0.26200, powershell 5.1, OpenSSH_for_Windows_9.5p2)
+sandboxd-server.exe: linux-cross-compiled GOOS=windows GOARCH=amd64 (go 1.26.0)
+launch: WMI Win32_Process.Create (survives ssh session teardown) --ttl 14400
+transport proof:
+  conn-default.json: bind_addr=127.0.0.1 port=<kernel-assigned> token=<128bit hex> pid=<winpid>
+  goprobe (Go, same host): reply={"arch":"amd64","ok":true,"os":"windows","owner_id":"go","proto_version":"1.0.0"}
+remote round (ssh -W bridge, fullround2.py):
+  HS:   {"arch":"amd64","ok":true,"os":"windows","owner_id":"e2e","proto_version":"1.0.0"}
+  EXEC: {"id":"2","result":{"existed":false,"handle_id":"cp-...","pgid":316}}      (echo job-test-1)
+  WAIT: {"event":"process.exited","handle_id":"cp-...","terminal":"exited(0)"}
+  SESS: sessions.list rows show handle states
+  EXEC-LONG: sleep 30 → running
+  KILL: {"killed":true}  →  WAIT: {"event":"process.exited","terminal":"signaled"}
+  idempotent replay: same request_id → existed:true same handle_id
+linux regression after transport change (all /tmp/opencode/e2e):
+  t6_modeflip OK, t11_reattach OK (exited(-1) after companion death), t7_tristate OK
+  t1_dualtrack OK, async_ledger OK, sess_full OK, persist OK
+bug fixed en route: protocol.ReadMessage rejected numeric JSON-RPC ids (hang shape) — now json.RawMessage both-typed

@@ -1,6 +1,0 @@
-=== bootstrap decision gates (D-15 chain) ===
-PASS: TestClassifyChain (0.00s)
-PASS: TestInstallGateClosedWithoutPin (0.00s)
-PASS: TestDecideReinstall (0.00s)
-PASS: TestComputeSHA256 (0.00s)
-passed=1

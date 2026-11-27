@@ -6,3 +6,4 @@
 2026-11-27T05:56:47.698Z T3 replay-verified: ["bash","-c","grep -E \"HANDLE|TORN_EXEC|DISCONNECT_VISIBLE|REATTACH|HANDLE_WAITABLE\" /tmp/opencode/t3v5.log"] :: iptables drop: in-flight exec fails fast with handle_id; machine disconnected <=
 2026-11-27T05:58:43.843Z T4 replay-verified: ["bash","-c","grep -E \"durable\" /tmp/opencode/t4full.log"] :: docker container non-workspace path file_read/file_write succeed via exec channe
 2026-11-27T05:59:18.684Z T5 replay-verified: ["bash","-c","cat /work/run/projects/bio-24/my_projects/agent-sandbox/.gos/task/3f7acd2f/evidence/t5-bootstrap-gates.log"] :: proto mismatch with pinned sha256 reinstalls; unpinned hash falls back to thin w
+2026-11-27T12:58:22.695Z T1 replay-verified: ["bash","-c","cat .gos/task/052d6ccc/evidence/winbuild-fullround.txt"] :: on winbuild: bootstrap writes conn.json (loopback auto port); ssh -W handshake a

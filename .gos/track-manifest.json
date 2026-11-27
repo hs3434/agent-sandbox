@@ -5,3 +5,9 @@
 {"ts":"2026-11-27T06:00:21.871Z","path":".gos/codebase/network.md","head":"20e807960d1c5d3bcefcbadd866990609dbdcd84","adopted":true}
 {"ts":"2026-11-27T06:00:22.123Z","path":".gos/task/3f7acd2f/.task-head","head":"20e807960d1c5d3bcefcbadd866990609dbdcd84","adopted":true}
 {"ts":"2026-11-27T06:00:22.364Z","path":".gos/task/3f7acd2f/plan.md","head":"20e807960d1c5d3bcefcbadd866990609dbdcd84","adopted":true}
+{"ts":"2026-11-27T13:11:13.075Z","path":".gos/lessons.json","head":"585ff34cd61d0f630b8d4cb4c3c7b193c2276f26","adopted":true}
+{"ts":"2026-11-27T13:11:13.312Z","path":".gos/lessons.md","head":"585ff34cd61d0f630b8d4cb4c3c7b193c2276f26","adopted":true}
+{"ts":"2026-11-27T13:11:13.555Z","path":".gos/task/052d6ccc/.task-head","head":"585ff34cd61d0f630b8d4cb4c3c7b193c2276f26","adopted":true}
+{"ts":"2026-11-27T13:11:13.796Z","path":".gos/task/052d6ccc/evidence/winbuild-fullround.txt","head":"585ff34cd61d0f630b8d4cb4c3c7b193c2276f26","adopted":true}
+{"ts":"2026-11-27T13:11:14.033Z","path":".gos/task/052d6ccc/plan.md","head":"585ff34cd61d0f630b8d4cb4c3c7b193c2276f26","adopted":true}
+{"ts":"2026-11-27T13:11:14.272Z","path":".gos/task/052d6ccc/spec.md","head":"585ff34cd61d0f630b8d4cb4c3c7b193c2276f26","adopted":true}

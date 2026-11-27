@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Change companion transport to a loopback TCP listener with a kernel-assigned port bridged by native ssh -W, removing the nc helper dependency on every platform, and extend the daemon to windows/amd64 with Job Object kill-tree and a Git Bash wrapper shell, fixing a protocol hang where numeric JSON-RPC ids were rejected (D-31/D-32) [2026-11-27]
 - Secure companion channel integrity — single-reader pump routing for disconnect recovery, concurrent-fork cap with terminal-row GC, idempotent-retry fork guard, server-side search deadline, argv option-injection closure (D-24/D-19/D-27/D-21) [2026-11-27]
 - Secure companion channel integrity — process-table cap counts concurrent forks with terminal-row GC, idempotent retries never double-fork, file search bounded by a server-side deadline, rg/grep argv option-injection closed, and disconnect recovery routed through a single pump reader so reattach converges (D-24/D-19/D-27/D-21) [2026-11-27]
 

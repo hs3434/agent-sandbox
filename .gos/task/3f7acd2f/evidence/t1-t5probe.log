@@ -1,8 +1,0 @@
-1 CONN_EXISTS=True FILE_MODE=0o600 DIR_MODE=0o700
-2 TOKEN_LEN=32 PROTO=1.0.0 OWNER=default
-3 HANDSHAKE_OK=True OS=linux ARCH=amd64
-4 PING=True ID=r1
-5 AUTH_REJECT=True
-6 SERVES_AFTER_TORN_FILE=True raw={'id': 'r2', 'result': {'ok': True, 'proto_version': '1.0.0'}}
-7 SHUTDOWN_CLEANUP=False
-T5 E2E: OK
