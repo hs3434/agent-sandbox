@@ -2,7 +2,7 @@
   "schema_version": 6,
   "repo_id": "a78c63fbf7c766cd",
   "level": 3,
-  "current_stage": "SHIP",
+  "current_stage": "DONE",
   "completed_stages": [
     "THINK",
     "PLAN",
@@ -20,10 +20,11 @@
   },
   "approvals": {
     "THINK": "2026-11-27T12:58:26.007Z",
-    "PLAN": "2026-11-27T13:05:51.327Z"
+    "PLAN": "2026-11-27T13:05:51.327Z",
+    "ARCHIVE": "2026-11-27T13:11:53.256Z"
   },
-  "spec_path": ".gos/task/052d6ccc/spec.md",
-  "plan_path": ".gos/task/052d6ccc/plan.md",
+  "spec_path": ".gos/archive/2026-11-27-v1.0.0-task-companion-windows-finish-prove/task/052d6ccc/spec.md",
+  "plan_path": ".gos/archive/2026-11-27-v1.0.0-task-companion-windows-finish-prove/task/052d6ccc/plan.md",
   "project": false,
   "requirements": [
     {
@@ -69,7 +70,7 @@
       "evidence": {
         "command": "[\"bash\",\"-c\",\"cat .gos/task/052d6ccc/evidence/winbuild-fullround.txt\"]",
         "output_excerpt": "winbuild (192.168.90.253, windows 10.0.26200, powershell 5.1, OpenSSH_for_Windows_9.5p2)",
-        "artifact_path": ".gos/task/052d6ccc/evidence/winbuild-fullround.txt",
+        "artifact_path": ".gos/archive/2026-11-27-v1.0.0-task-companion-windows-finish-prove/task/052d6ccc/evidence/winbuild-fullround.txt",
         "replay": true
       }
     }
@@ -187,15 +188,7 @@
       }
     }
   },
-  "checkpoints": [
-    {
-      "stage": "BUILD",
-      "unit": "all-waves (auto at commit)",
-      "done": "T1a,T1b,T2a,T2b,T3a,T3b,T4a,T4b",
-      "remaining": "",
-      "at": "2026-11-27T13:08:43.392Z"
-    }
-  ],
+  "checkpoints": [],
   "review_findings": [
     {
       "severity": "major",
@@ -215,5 +208,6 @@
       "status": "accepted",
       "fix": "read path enforces the 32MB limit; write is daemon-marshalled small object"
     }
-  ]
+  ],
+  "completed_at": "2026-11-27T13:11:54.194Z"
 }

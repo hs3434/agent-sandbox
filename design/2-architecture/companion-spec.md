@@ -28,7 +28,7 @@ ssh:     sandboxd ──ssh direct-tcpip──> sandboxd-server ──> 目标�
 
 ## 3. 协议骨架
 
-- 传输：unix socket（linux）/ named pipe（windows，W2 若不支持则 Windows 钉 thin——D-20 平台矩阵）
+- 传输：loopback TCP（bind 127.0.0.1 内核自动端口，conn.json 记录）+ 原生 `ssh -W` 桥（v3.32，D-31；unix-socket + nc -U 时代已终结，nc 依赖移除）
 - 帧：JSON lines + request-id；双向 max_line_bytes=32MB（D-25）；握手首行 {token, proto_version, os, arch, owner_id}
 - RPC：exec{blocking|async}、wait/kill(handle)、file.read/write/patch/search/stat、ping（心跳复用）、shutdown、sessions.list（L5 对账数据源）
 - 事件（server→client 推送）：process.exited{handle,terminal_state}、heartbeat、log
@@ -165,6 +165,14 @@ why-not: warn only on non-durable writes — read-path surprises remain; the fla
 
 why-not: TCP+own auth — new port and auth bootstrap for nothing; stdio on ssh channel — companion dies with the connection, L4 broken.
 
+> **v3.32 修订（AD-037, D-31）**: transport lands as **loopback TCP + native
+> `ssh -W`** — the unix-socket era forced an `nc -U` stdio bridge (absent on
+> windows, verified), while `ssh -W` ships in every OpenSSH including
+> Windows' 9.5. The daemon binds `127.0.0.1:<kernel-assigned port>`; the
+> port rides conn.json; auth still rides ssh + token. Both "TCP+own auth"
+> objections dissolve: auth does NOT move to TCP, and the port is
+> kernel-assigned (zero mgmt). The nc dependency is gone on linux too.
+
 ### D-13: trust model
 | Option | Premise | Pros | Cons |
 |:--|:--|:--|:--|
@@ -228,6 +236,17 @@ why-not: at-least-once raw — retry = second terraform apply racing the first.
 | implicit linux assumption | fewer docs | fewer docs | silent degradation on unsupported OS |
 
 why-not: implicit linux assumption — silent degradation on unsupported OS; comm-split-on-space — misparse under adversarial process names.
+
+> **v3.32 修订（AD-037, D-32）**: matrix now includes **windows/amd64**
+> (linux/amd64 + linux/arm64 remain; windows/arm64 + darwin stay thin).
+> Windows process model = **Job Objects** (kernel twin of the unix process
+> group: kill-tree, KILL_ON_JOB_CLOSE orphan guard, ActiveProcesses
+> liveness) + Git Bash `sh.exe` wrapper; missing shell answers typed
+> `unsupported_typed`. Platform split is 4 functions behind `go:build`
+> tags — one binary, one protocol (v3.14 promise). Windows bootstrap
+> operator note: a daemon started inside an SSH session dies with that
+> session — launch session-detached (WMI `Win32_Process.Create` proven;
+> scheduled task is the production variant).
 
 ### D-21: terminal tri-state
 | Option | Premise | Pros | Cons |

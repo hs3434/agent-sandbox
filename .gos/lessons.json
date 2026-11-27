@@ -8,6 +8,14 @@
       "text": "companion client dual-reader (Call reader + events pump on one conn) deadlocked recovery: EOF drop cascade starved post-restart dial; single-reader pump with pending-map routing is the fix — one reader per conn, never two",
       "tags": [],
       "origin": "v2"
+    },
+    {
+      "id": "8badf27ab0390a7c",
+      "at": "2026-11-27",
+      "type": "project",
+      "text": "windows daemon must be launched session-detached (WMI Win32_Process.Create proven on winbuild): a process started inside an ssh session dies with the session, which masqueraded as a transport bug for an hour",
+      "tags": [],
+      "origin": "v2"
     }
   ],
   "audit": [
@@ -28,7 +36,16 @@
       "prev": "1e740e9f",
       "new_id": "b4d26988d8560176",
       "self": "613d58c5"
+    },
+    {
+      "at": "2026-11-27T13:11:49.674Z",
+      "what": "add",
+      "why": "add project lesson",
+      "tty_derived": false,
+      "prev": "613d58c5",
+      "new_id": "8badf27ab0390a7c",
+      "self": "23e21431"
     }
   ],
-  "chain_head": "613d58c5"
+  "chain_head": "23e21431"
 }
