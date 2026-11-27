@@ -1,8 +1,9 @@
 // sandboxd-server is the companion daemon (T5, D-01): the ssh axis's
-// resident protocol peer. It serves a unix socket with JSON-lines protocol
-// (pkg/contract vocabulary, framing per D-25), admits clients by token
-// fail-closed (D-16), refuses root (D-17), and publishes its discovery file
-// atomically (D-18). Composition root: exec/file supervisors land in T8/T9.
+// resident protocol peer. It serves a loopback TCP listener (D-31) with
+// JSON-lines protocol (pkg/contract vocabulary, framing per D-25), admits
+// clients by token fail-closed (D-16), refuses root (D-17), and publishes
+// its discovery file atomically (D-18). Composition root: exec/file
+// supervisors land in T8/T9.
 package main
 
 import (
@@ -19,9 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"os/exec"
 	"strings"
-	"syscall"
 
 	"github.com/hs3434/agent-sandbox/pkg/companion"
 	"github.com/hs3434/agent-sandbox/pkg/protocol"
@@ -32,6 +31,13 @@ var (
 	sup     *companion.Supervisor
 	pushMu  sync.Mutex
 	pushers = map[net.Conn]chan map[string]any{} // clients wanting events
+)
+
+// shutdownHooks is the per-platform wiring (proc_unix/proc_windows): the
+// signal list to watch and the shutdown-request entrypoint.
+var (
+	shutdownSignals     []os.Signal
+	requestShutdownHook = func() {}
 )
 
 func main() {
@@ -68,26 +74,22 @@ func main() {
 	if err != nil {
 		fatal("token: %v", err)
 	}
-	// discovery dir before the socket node (0700 — D-16's first gate)
+	// discovery dir before the listener record (0700 — D-16's first gate)
 	if err := os.MkdirAll(companion.Dir(*home), 0o700); err != nil {
 		fatal("discovery dir: %v", err)
 	}
-	socket := companion.SocketPath(*home, *owner)
-	_ = os.Remove(socket) // stale socket from a crash is ours to clean
-
-	ln, err := net.Listen("unix", socket)
+	// D-31 transport: loopback TCP, kernel-assigned port. Never on a
+	// non-loopback interface (the bind address IS the security gate —
+	// token auth is the second; clients arrive via ssh direct-tcpip).
+	ln, err := net.Listen("tcp", companion.BindAddr+":0")
 	if err != nil {
-		fatal("listen %s: %v", socket, err)
-	}
-	// socket must be usable by the owning user only (D-16: 0700 dir is the
-	// first gate; the socket node itself is the second)
-	if err := os.Chmod(socket, 0o600); err != nil {
-		fatal("socket mode: %v", err)
+		fatal("listen %s: %v", companion.BindAddr, err)
 	}
 
 	conn := &companion.Conn{
 		Token:        token,
-		Socket:       socket,
+		BindAddr:     companion.BindAddr,
+		Port:         ln.Addr().(*net.TCPAddr).Port,
 		ProtoVersion: companion.ProtoVersion,
 		OwnerID:      *owner,
 		Pid:          os.Getpid(),
@@ -113,7 +115,6 @@ func main() {
 		sup.SetTTL(time.Duration(*ttlSecs)*time.Second, func(why string) {
 			log.Printf("ttl: retiring daemon (%s)", why)
 			_ = os.Remove(companion.ConnPath(*home, *owner))
-			_ = os.Remove(socket)
 			os.Exit(0)
 		})
 	}
@@ -123,20 +124,23 @@ func main() {
 		})
 	})
 
+	cleanup := func() {
+		log.Printf("shutdown: closing listener + discovery cleanup")
+		ln.Close()
+		_ = os.Remove(companion.ConnPath(*home, *owner))
+	}
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(stop, shutdownSignals...)
 
 	go func() {
 		<-stop
-		log.Printf("shutdown: closing socket + discovery cleanup")
-		ln.Close()
-		_ = os.Remove(socket)
-		_ = os.Remove(companion.ConnPath(*home, *owner))
+		cleanup()
 		os.Exit(0)
 	}()
+	registerShutdownHook(cleanup)
 
-	log.Printf("sandboxd-server ready: proto=%s owner=%s uid=%d socket=%s",
-		companion.ProtoVersion, *owner, uid, socket)
+	log.Printf("sandboxd-server ready: proto=%s owner=%s uid=%d addr=%s",
+		companion.ProtoVersion, *owner, uid, ln.Addr())
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -302,25 +306,37 @@ func dispatch(msg *protocol.Message) *protocol.Response {
 			}
 			break
 		}
-		// fork the setsid'd group here (the daemon owns the children);
+		// fork the detached child here (the daemon owns the children);
 		// the supervisor records + reaps. Exit-code wrapper (D-05, docker
-		// twin): the group leader's shell records its own terminal state to
-		// a per-handle file — the reaper reads truth the child wrote, so a
-		// natural death is exited(N), not exit_unknown.
+		// twin): the leader shell records its own terminal state to a
+		// per-handle file — the reaper reads truth the child wrote, so a
+		// natural death is exited(N), not exit_unknown. D-32: unix forks
+		// setsid'd (kill = -pgid), windows wraps a Job Object post-fork.
 		exitPath := sup.ExitFilePath(h)
 		wrapped := fmt.Sprintf(`%s
 __sb_code=$?
 if [ $__sb_code -gt 128 ]; then echo "sig:$((__sb_code-128))" > %s; else echo "$__sb_code" > %s; fi`, cmd, shQuote(exitPath), shQuote(exitPath))
-		pc := exec.Command("/bin/sh", "-c", wrapped)
-		pc.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := pc.Start(); err != nil {
+		shell := shellFor()
+		if shell == "" {
 			sup.Remove(h) // row without a process is a lie — roll back
+			resp.Error = &protocol.ProtoError{Code: "unsupported_typed",
+				Message: "no POSIX shell found (Git Bash expected on windows); exec_async stays thin here"}
+			break
+		}
+		pc, err := forkAsyncChild(shell, wrapped)
+		if err != nil {
+			sup.Remove(h) // row without a process is a lie — roll back
+			resp.Error = &protocol.ProtoError{Code: "fork_failed", Message: err.Error()}
+			break
+		}
+		if err := postForkChild(pc.Process.Pid); err != nil {
+			_ = killProcFamily(pc.Process.Pid) // half-wrapped child = kill it now
+			sup.Remove(h)
 			resp.Error = &protocol.ProtoError{Code: "fork_failed", Message: err.Error()}
 			break
 		}
 		pgid := pc.Process.Pid
 		sup.SetPGID(h, pgid)
-		go func() { _ = pc.Wait() }()
 		resp.Result = map[string]any{"handle_id": h, "existed": existed, "pgid": pgid}
 	case "wait":
 		h, _ := msg.Params["handle_id"].(string)
@@ -402,7 +418,7 @@ if [ $__sb_code -gt 128 ]; then echo "sig:$((__sb_code-128))" > %s; else echo "$
 	case "shutdown":
 		resp.Result = map[string]any{"ok": true}
 		log.Printf("shutdown requested by client")
-		go func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) }()
+		go requestShutdown()
 	default:
 		resp.Error = &protocol.ProtoError{
 			Code:    "unknown_method",

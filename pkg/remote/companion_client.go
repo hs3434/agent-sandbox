@@ -115,10 +115,11 @@ func (c *CompanionClient) fetchConn(ctx context.Context) (*companion.Conn, error
 	return &conn, nil
 }
 
-// dialConn opens a stdio bridge to the remote unix socket and performs the
-// token handshake (D-16 fail-closed) with the 15s budget. The bridge is
-// `ssh host nc -U <socket>`: OpenSSH's -W endpoint is TCP-only on the
-// deployed matrix (8.9), so the unix hop rides the remote nc — one process,
+// dialConn opens a stdio bridge to the remote loopback listener and performs
+// the token handshake (D-16 fail-closed) with the 15s budget. The bridge is
+// `ssh host -W 127.0.0.1:<port>` (D-31): OpenSSH's -W natively forwards stdio
+// to a TCP endpoint on all platforms (Windows ssh.exe included) — no remote
+// helper (the nc dependency of the unix-socket era is gone), one process,
 // killed with the connection, no listeners left behind.
 func (c *CompanionClient) dialConn(ctx context.Context, conn *companion.Conn) (net.Conn, *bufio.Reader, error) {
 	st, ok := c.backend.machines[c.machine]
@@ -132,9 +133,10 @@ func (c *CompanionClient) dialConn(ctx context.Context, conn *companion.Conn) (n
 	// (drop/Close paths). Dial latency still bounded by the handshake ack
 	// budget below, which is the honest 15s gate.
 	dialCtx := context.Background()
-	// unix-socket stdio bridge: ssh runs `nc -U <socket>` and pipes us in
+	// TCP stdio bridge: ssh -W connects to the loopback endpoint from inside
+	// the remote host (D-31) — same path on linux and windows
 	wcmd := exec.CommandContext(dialCtx, "ssh", append(c.backend.sshBaseArgs(st),
-		"nc -U "+conn.Socket+" 2>/dev/null")...)
+		"-W", conn.Endpoint())...)
 	wcmd.Stderr = nil // keep stderr silent (quiet posture D-27)
 	stdin, err := wcmd.StdinPipe()
 	if err != nil {

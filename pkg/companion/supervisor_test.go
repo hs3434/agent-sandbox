@@ -3,26 +3,21 @@ package companion
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 )
 
-// forkSleep starts a detached sleep in its own process group (the real
-// async shape: setsid semantics via Setpgid) and returns its pgid.
+// forkSleep starts a detached sleep (the real async shape — platform
+// detach lives in forkTestChild) and returns its identity (pgid/pid).
 func forkSleep(t *testing.T, secs int) int {
 	t.Helper()
-	cmd := exec.Command("/bin/sleep", fmt.Sprintf("%d", secs))
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
+	pid, err := forkTestChild("/bin/sleep", fmt.Sprintf("%d", secs))
+	if err != nil {
 		t.Fatalf("start sleep: %v", err)
 	}
-	pgid := cmd.Process.Pid
-	t.Cleanup(func() { _ = syscall.Kill(-pgid, syscall.SIGKILL) })
-	go func() { _ = cmd.Wait() }()
-	return pgid
+	t.Cleanup(func() { _ = KillGroup(pid) })
+	return pid
 }
 
 func TestExecAsyncIdempotency(t *testing.T) {
@@ -64,7 +59,7 @@ func TestTableCapTyped(t *testing.T) {
 	}
 	// reap the sleepers → terminal rows → cap reopens (running-only count)
 	for i := 0; i < realHalf; i++ {
-		syscall.Kill(-pids[i], syscall.SIGKILL)
+		KillGroup(pids[i])
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	var reopened bool
@@ -90,7 +85,7 @@ func TestGCTerminalRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	syscall.Kill(-pid, syscall.SIGKILL)
+	KillGroup(pid)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if p, ok := s.Wait(h); ok && p.State != ProcRunning {
@@ -142,7 +137,7 @@ func TestBootRescanAdoptAndUnknown(t *testing.T) {
 		t.Fatalf("dead-at-boot row must be exit_unknown: %+v", pd)
 	}
 	// cleanup the sleep
-	syscall.Kill(-live, syscall.SIGKILL)
+	KillGroup(live)
 }
 
 func TestReapRealProcess(t *testing.T) {

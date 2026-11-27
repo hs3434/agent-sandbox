@@ -124,15 +124,23 @@ func ReadMessage(r *bufio.Reader) (*Message, error) {
 		return nil, err
 	}
 	m := &Message{Raw: line}
+	// id is number-or-string on the wire (JSON-RPC allows both; we ran a
+	// real client hang on refusing numbers — D-31's TCP probe caught it)
 	var probe struct {
-		ID     string         `json:"id"`
-		Method string         `json:"method"`
-		Params map[string]any `json:"params"`
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params map[string]any  `json:"params"`
 	}
 	if err := json.Unmarshal(line, &probe); err != nil {
 		return nil, fmt.Errorf("message: malformed: %w", err)
 	}
-	m.ID, m.Method, m.Params = probe.ID, probe.Method, probe.Params
+	if len(probe.ID) > 0 {
+		if err := json.Unmarshal(probe.ID, &m.ID); err != nil {
+			// number id: normalize to its literal (correlation is byte-exact)
+			m.ID = string(probe.ID)
+		}
+	}
+	m.Method, m.Params = probe.Method, probe.Params
 	return m, nil
 }
 

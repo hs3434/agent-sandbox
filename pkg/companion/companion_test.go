@@ -96,7 +96,10 @@ func TestPlatformMatrix(t *testing.T) {
 	if !Supported("linux", "amd64") || !Supported("linux", "arm64") {
 		t.Error("linux amd64/arm64 must be supported")
 	}
-	if Supported("windows", "amd64") || Supported("darwin", "arm64") {
-		t.Error("non-linux must pin thin (D-20 matrix, named not silent)")
+	if !Supported("windows", "amd64") {
+		t.Error("windows amd64 must be supported (D-32 Job Object model landed)")
+	}
+	if Supported("windows", "arm64") || Supported("darwin", "arm64") {
+		t.Error("unmatrixed platforms must pin thin (D-20, named not silent)")
 	}
 }

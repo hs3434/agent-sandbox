@@ -24,15 +24,39 @@ const ProtoVersion = "1.0.0"
 // DirName is the discovery directory under the remote user's home.
 const DirName = ".sandboxd-server"
 
+// BindAddr is the D-31 transport's only legal bind address: loopback. The
+// listener is never reachable off-host; clients ride ssh direct-tcpip, so
+// the bind address itself is the first security gate (token is the second).
+const BindAddr = "127.0.0.1"
+
 // Conn is the discovery file contract (~/.sandboxd-server/conn.json): where
-// the socket lives and which token admits clients (D-16). Written atomically
-// (tmp+rename, 0600 dir/file) — readers never see a torn file (D-18).
+// the listener lives and which token admits clients (D-16, D-31). Transport
+// is a loopback TCP listener: BindAddr is always 127.0.0.1 (never exposed,
+// firewall-invisible) and Port is kernel-assigned at boot (no mgmt). Socket
+// is legacy (D-30 unix-socket era); readers prefer Port, older binaries
+// keep parsing it so a stale conn.json never reads as corrupt.
+// Written atomically (tmp+rename, 0600 dir/file) — readers never see a torn
+// file (D-18).
 type Conn struct {
 	Token        string `json:"token"`
-	Socket       string `json:"socket"`
+	Socket       string `json:"socket,omitempty"`
+	BindAddr     string `json:"bind_addr,omitempty"`
+	Port         int    `json:"port,omitempty"`
 	ProtoVersion string `json:"proto_version"`
 	OwnerID      string `json:"owner_id"`
 	Pid          int    `json:"pid"`
+}
+
+// Endpoint is the transport address clients dial (D-31): "127.0.0.1:port"
+// for TCP conns, the unix socket path as legacy fallback.
+func (c *Conn) Endpoint() string {
+	if c.Port > 0 {
+		if c.BindAddr == "" {
+			c.BindAddr = "127.0.0.1"
+		}
+		return fmt.Sprintf("%s:%d", c.BindAddr, c.Port)
+	}
+	return c.Socket
 }
 
 // Home returns the discovery directory for a user home (~ expansion is the
@@ -123,7 +147,7 @@ func ReadConn(home, ownerID string) ReadConnState {
 		return ReadConnState{State: "corrupt"}
 	}
 	var c Conn
-	if err := json.Unmarshal(data, &c); err != nil || c.Token == "" || c.Socket == "" {
+	if err := json.Unmarshal(data, &c); err != nil || c.Token == "" || c.Endpoint() == "" {
 		return ReadConnState{State: "corrupt"}
 	}
 	return ReadConnState{State: "ok", Conn: &c}
@@ -132,14 +156,23 @@ func ReadConn(home, ownerID string) ReadConnState {
 // Platform reports this binary's os/arch (the handshake's matrix fields).
 func Platform() (string, string) { return runtime.GOOS, runtime.GOARCH }
 
-// Supported tells whether a companion can serve this platform (D-20 matrix:
-// linux/amd64 + linux/arm64 yes; everything else pins thin — honest, not a
-// silent degradation).
+// Supported tells whether a companion can serve this platform (D-20 matrix,
+// extended by D-32: linux/amd64 + linux/arm64 + windows/amd64 yes;
+// everything else pins thin — honest, not a silent degradation).
 func Supported(goos, goarch string) bool {
+	if goos == "windows" {
+		return goarch == "amd64"
+	}
 	if goos != "linux" {
 		return false
 	}
 	return goarch == "amd64" || goarch == "arm64"
+}
+
+// FileExists is the plain existence probe (proc_windows shell discovery).
+func FileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // RootGuard is the D-17 invariant: uid0 refuses to serve unless the operator

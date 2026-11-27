@@ -2,14 +2,12 @@ package companion
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -322,12 +320,12 @@ func (s *Supervisor) KillByPgid(pgid int) error {
 	return s.Kill(handleID)
 }
 
-// Kill signals the process group. Identity guard: the row's pgid must be a
-// group the daemon forked itself (setsid'd leader we recorded at ExecAsync);
-// pgids ≤ 1 are refused outright. A full starttime comparison lands with the
-// pidfd endgame (D-05) — today the fork-origin invariant is the guard.
-// Liveness: syscall.Kill(-pgid, 0) — the LEADER may be reaped while group
-// members live, and /proc/<leader> alone would refuse a live group.
+// Kill terminates the handle's process family (platformproc abstraction —
+// D-32: unix = process group SIGKILL, windows = Job Object terminate).
+// Identity guard: the row's pgid must be an identity the daemon forked
+// itself (recorded at ExecAsync); pgids ≤ 1 are refused outright. A full
+// starttime comparison lands with the pidfd endgame (D-05) — today the
+// fork-origin invariant is the guard.
 func (s *Supervisor) Kill(handleID string) error {
 	s.mu.Lock()
 	p, ok := s.procs[handleID]
@@ -341,8 +339,7 @@ func (s *Supervisor) Kill(handleID string) error {
 	if !pidAlive(p.PGID) {
 		return fmt.Errorf("handle %q: process %d gone (reaper will resolve the terminal state)", handleID, p.PGID)
 	}
-	// negative pid = the whole process group (setsid'd, so the group is ours)
-	return syscall.Kill(-p.PGID, syscall.SIGKILL)
+	return killProcFamily(p.PGID)
 }
 
 // List returns all rows (sessions.list — L5 reattach's data source).
@@ -455,19 +452,8 @@ func (s *Supervisor) persist(p *Proc) error {
 	return os.Rename(tmp, filepath.Join(s.dir, p.HandleID+".json"))
 }
 
-// pidAlive checks the process GROUP leader (pgid): /proc/<pgid> existence.
-func pidAlive(pgid int) bool {
-	if pgid <= 1 {
-		return false // never "alive" on init — refuse the wrong-probe trap
-	}
-	// Group-level probe: the LEADER may be reaped while members live, and
-	// kill(0) on -pgid answers "does this group still have processes".
-	if syscall.Kill(-pgid, 0) == nil {
-		return true
-	}
-	// EPERM means the group exists but isn't ours — still alive.
-	return errors.Is(syscall.Kill(-pgid, 0), syscall.EPERM)
-}
+// pidAlive is platformproc's liveness probe (os-specific; see
+// proc_unix.go / proc_windows.go). Kept here as the single call site shape.
 
 func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
